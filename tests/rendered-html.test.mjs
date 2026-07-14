@@ -3,10 +3,11 @@ import { access, readFile } from "node:fs/promises";
 import test from "node:test";
 
 test("builds the DISC assessment product surface", async () => {
-  const [page, assessment, paper, layout, hosting] = await Promise.all([
+  const [page, assessment, paper, appsScript, layout, hosting] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/disc-assessment.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/paper-assessment.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../google-apps-script/Code.gs", import.meta.url), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
     readFile(new URL("../.openai/hosting.json", import.meta.url), "utf8"),
     access(new URL("../dist/server/index.js", import.meta.url)),
@@ -25,7 +26,7 @@ test("builds the DISC assessment product surface", async () => {
   assert.doesNotMatch(assessment, /data-testid="next-question"/);
   assert.doesNotMatch(assessment, /view === "home"/);
   assert.match(assessment, /관리자 대시보드/);
-  assert.match(assessment, /Google Sheets 저장 완료/);
+  assert.match(assessment, /Google Sheets · DISC 응답 저장 완료/);
   assert.doesNotMatch(assessment, /mode: "no-cors"/);
   assert.doesNotMatch(assessment, /Apps Script 웹앱 주소/);
   assert.match(assessment, /QUESTIONS\.length/);
@@ -33,6 +34,8 @@ test("builds the DISC assessment product surface", async () => {
   assert.match(paper, /검사지 인쇄·PDF/);
   assert.match(paper, /SCORE_KEY_ROWS/);
   assert.match(paper, /동점 판별 문항/);
+  assert.match(appsScript, /SPREADSHEET_ID/);
+  assert.match(appsScript, /getSheetDestination_/);
   assert.match(layout, /og\.png/);
   assert.match(hosting, /"d1": "DB"/);
   assert.doesNotMatch(`${page}\n${layout}`, /codex-preview|Your site is taking shape|react-loading-skeleton/i);

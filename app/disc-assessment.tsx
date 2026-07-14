@@ -59,6 +59,11 @@ type TieBreakSummary = {
 };
 
 type ResultRecord = TeamResultRecord;
+type SheetDestination = {
+  spreadsheetName: string;
+  spreadsheetUrl: string;
+  sheetName: string;
+};
 type AssessmentResultPayload = {
   name: string;
   team: string;
@@ -94,7 +99,7 @@ function createResultRecordIdentity() {
 }
 
 function loadSheetResults(sheetApi: string, adminPassword: string) {
-  return new Promise<ResultRecord[]>((resolve, reject) => {
+  return new Promise<{ results: ResultRecord[]; destination: SheetDestination | null }>((resolve, reject) => {
     const callbackName = `discFlowSheet_${Date.now()}_${Math.random().toString(36).slice(2)}`;
     const script = document.createElement("script");
     const timeout = window.setTimeout(() => finish(new Error("Google Sheets 응답 시간이 초과되었습니다.")), 15000);
@@ -105,19 +110,26 @@ function loadSheetResults(sheetApi: string, adminPassword: string) {
       delete (window as unknown as Record<string, unknown>)[callbackName];
     }
 
-    function finish(error?: Error, results?: ResultRecord[]) {
+    function finish(
+      error?: Error,
+      response?: { results: ResultRecord[]; destination: SheetDestination | null },
+    ) {
       cleanup();
       if (error) reject(error);
-      else resolve(results ?? []);
+      else resolve(response ?? { results: [], destination: null });
     }
 
     (window as unknown as Record<string, unknown>)[callbackName] = (payload: {
       ok?: boolean;
       results?: ResultRecord[];
+      destination?: SheetDestination;
       error?: string;
     }) => {
       if (!payload.ok) finish(new Error(payload.error || "Google Sheets 데이터를 불러오지 못했습니다."));
-      else finish(undefined, payload.results ?? []);
+      else finish(undefined, {
+        results: payload.results ?? [],
+        destination: payload.destination ?? null,
+      });
     };
 
     const url = new URL(sheetApi);
@@ -274,6 +286,7 @@ export function DiscAssessment({ initialView = "info" }: { initialView?: "info" 
   const [groupCount, setGroupCount] = useState(3);
   const [groupSeed, setGroupSeed] = useState(1);
   const [googleSheetsConnected, setGoogleSheetsConnected] = useState(false);
+  const [sheetDestination, setSheetDestination] = useState<SheetDestination | null>(null);
   const [sheetSyncState, setSheetSyncState] = useState<"idle" | "syncing" | "success" | "error">("idle");
   const [sheetSyncMessage, setSheetSyncMessage] = useState("");
   const [externalSheetMode, setExternalSheetMode] = useState(false);
@@ -501,8 +514,9 @@ export function DiscAssessment({ initialView = "info" }: { initialView?: "info" 
     try {
       if (externalSheetMode) {
         if (!validSheetApi(sheetApi)) throw new Error("Google Sheets 연결 설정을 확인해 주세요.");
-        const results = await loadSheetResults(sheetApi, adminPassword);
-        setAdminRecords(results);
+        const sheetResponse = await loadSheetResults(sheetApi, adminPassword);
+        setAdminRecords(sheetResponse.results);
+        setSheetDestination(sheetResponse.destination);
         setGoogleSheetsConnected(true);
       } else {
         const response = await fetch("/api/results", {
@@ -516,6 +530,7 @@ export function DiscAssessment({ initialView = "info" }: { initialView?: "info" 
         };
         if (!response.ok) throw new Error(payload.error || "데이터를 불러오지 못했습니다.");
         setAdminRecords(payload.results ?? []);
+        setSheetDestination(null);
         setGoogleSheetsConnected(Boolean(payload.integrations?.googleSheets?.configured));
       }
       setAdminAuthenticated(true);
@@ -822,7 +837,7 @@ export function DiscAssessment({ initialView = "info" }: { initialView?: "info" 
               </div>
               <div className={`save-chip ${saveState}`}>
                 {saveState === "saving" && "결과 저장 중"}
-                {saveState === "saved" && <><Check size={15} /> {externalSheetMode ? "Google Sheets 저장 완료" : "결과 저장 완료"}</>}
+                {saveState === "saved" && <><Check size={15} /> {externalSheetMode ? "Google Sheets · DISC 응답 저장 완료" : "결과 저장 완료"}</>}
                 {saveState === "error" && (
                   <><span title={saveError}>결과 저장 실패</span><button type="button" onClick={() => pendingSave && void persistResult(pendingSave)} disabled={!pendingSave}>다시 저장</button></>
                 )}
@@ -985,9 +1000,22 @@ export function DiscAssessment({ initialView = "info" }: { initialView?: "info" 
                 <div className="admin-heading">
                   <div><span className="step-label">ADMIN</span><h1>DISC 팀 인사이트</h1><p>응답 현황부터 조 편성, 디브리핑까지 한 흐름으로 운영하세요.</p></div>
                   <div className="admin-actions">
-                    <span className={`sheets-status ${googleSheetsConnected ? "connected" : ""}`}>
-                      <FileSpreadsheet size={15} /> Google Sheets {googleSheetsConnected ? "연결됨" : "미연결"}
-                    </span>
+                    {sheetDestination ? (
+                      <a
+                        className="sheets-status connected"
+                        href={sheetDestination.spreadsheetUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        title={`${sheetDestination.spreadsheetName} > ${sheetDestination.sheetName} 열기`}
+                      >
+                        <FileSpreadsheet size={15} />
+                        <span>{sheetDestination.spreadsheetName} · {sheetDestination.sheetName}</span>
+                      </a>
+                    ) : (
+                      <span className={`sheets-status ${googleSheetsConnected ? "connected" : ""}`}>
+                        <FileSpreadsheet size={15} /> Google Sheets {googleSheetsConnected ? "연결됨" : "미연결"}
+                      </span>
+                    )}
                     <button className="secondary-button" onClick={openPaperAssessment} title="현장용 한 장 검사지 열기">
                       <Printer size={17} /> 1장 검사지
                     </button>

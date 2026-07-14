@@ -15,11 +15,13 @@ const DISC_HEADERS = [
 ];
 
 function setupDiscSheet() {
-  const sheet = getDiscSheet_();
+  const spreadsheet = getDiscSpreadsheet_();
+  PropertiesService.getScriptProperties().setProperty('SPREADSHEET_ID', spreadsheet.getId());
+  const sheet = getDiscSheet_(spreadsheet);
   ensureHeaders_(sheet);
   sheet.setFrozenRows(1);
   sheet.autoResizeColumns(1, DISC_HEADERS.length);
-  return sheet.getName();
+  return spreadsheet.getName() + ' > ' + sheet.getName();
 }
 
 function doGet(event) {
@@ -35,7 +37,11 @@ function doGet(event) {
     return jsonp_(callback, { ok: false, error: '관리자 비밀번호가 올바르지 않습니다.' });
   }
 
-  return jsonp_(callback, { ok: true, results: listResults_() });
+  return jsonp_(callback, {
+    ok: true,
+    destination: getSheetDestination_(),
+    results: listResults_(),
+  });
 }
 
 function doPost(event) {
@@ -75,7 +81,7 @@ function doPost(event) {
       sheet.appendRow(row);
     }
 
-    return json_({ ok: true, recordId: recordId });
+    return json_({ ok: true, recordId: recordId, sheetName: DISC_SHEET_NAME });
   } catch (error) {
     return json_({ ok: false, error: String(error) });
   }
@@ -110,9 +116,31 @@ function listResults_() {
     .reverse();
 }
 
-function getDiscSheet_() {
+function getDiscSpreadsheet_() {
+  const spreadsheetId = String(
+    PropertiesService.getScriptProperties().getProperty('SPREADSHEET_ID') || ''
+  ).trim();
+  if (spreadsheetId) return SpreadsheetApp.openById(spreadsheetId);
+
   const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  if (!spreadsheet) {
+    throw new Error('스크립트 속성 SPREADSHEET_ID에 저장할 Google 스프레드시트 ID를 입력하세요.');
+  }
+  return spreadsheet;
+}
+
+function getDiscSheet_(spreadsheet) {
+  spreadsheet = spreadsheet || getDiscSpreadsheet_();
   return spreadsheet.getSheetByName(DISC_SHEET_NAME) || spreadsheet.insertSheet(DISC_SHEET_NAME);
+}
+
+function getSheetDestination_() {
+  const spreadsheet = getDiscSpreadsheet_();
+  return {
+    spreadsheetName: spreadsheet.getName(),
+    spreadsheetUrl: spreadsheet.getUrl(),
+    sheetName: DISC_SHEET_NAME,
+  };
 }
 
 function ensureHeaders_(sheet) {

@@ -30,10 +30,10 @@ npm run dev
 
 1. 새 Google 스프레드시트를 만들고 `확장 프로그램 > Apps Script`를 엽니다.
 2. [google-apps-script/Code.gs](google-apps-script/Code.gs)의 내용을 Apps Script 편집기에 넣습니다.
-3. 프로젝트 설정에서 스크립트 속성 `ADMIN_PASSWORD`를 만들고 관리자 비밀번호를 입력합니다. 비공개 서버 동기화도 사용할 경우 `API_TOKEN`을 추가합니다.
-4. Apps Script 편집기에서 `setupDiscSheet` 함수를 한 번 실행합니다.
+3. 프로젝트 설정에서 스크립트 속성 `ADMIN_PASSWORD`를 만들고 관리자 비밀번호를 입력합니다. 저장할 시트를 확실히 고정하려면 스프레드시트 주소의 `/d/`와 `/edit` 사이 값을 `SPREADSHEET_ID`로 입력합니다. 비공개 서버 동기화도 사용할 경우 `API_TOKEN`을 추가합니다.
+4. Apps Script 편집기에서 `setupDiscSheet` 함수를 한 번 실행합니다. 이 함수는 현재 스프레드시트 ID를 저장하고 `DISC 응답` 탭을 만듭니다.
 5. `배포 > 새 배포 > 웹 앱`에서 실행 사용자를 본인, 액세스 사용자를 모든 사용자로 설정해 배포합니다.
-6. 공개 사이트의 `/admin/`에서 3단계 관리자 비밀번호를 입력합니다.
+6. 공개 사이트의 `/admin/`에서 3단계 관리자 비밀번호를 입력합니다. 연결된 스프레드시트 이름과 `DISC 응답` 탭이 관리자 화면에 표시됩니다.
 7. 로그인 후 `검사 링크 복사`를 눌러 일반 검사 주소를 참여자에게 공유합니다.
 
 ```env
