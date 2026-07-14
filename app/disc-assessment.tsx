@@ -1019,7 +1019,7 @@ export function DiscAssessment({ initialView = "info" }: { initialView?: "info" 
                     <button
                       className="primary-button offline-print-button"
                       onClick={openPaperAssessment}
-                      title="A4 한 장용 오프라인 검사지 열기"
+                      title="A4 질문지 1장과 채점·해설지 1장 열기"
                       data-testid="open-offline-assessment"
                     >
                       <Printer size={17} /> 오프라인 검사지 출력

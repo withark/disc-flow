@@ -32,9 +32,10 @@ test("builds the DISC assessment product surface", async () => {
   assert.doesNotMatch(assessment, /mode: "no-cors"/);
   assert.doesNotMatch(assessment, /Apps Script 웹앱 주소/);
   assert.match(assessment, /QUESTIONS\.length/);
-  assert.match(paper, /현장용 DISC 행동유형 검사지/);
-  assert.match(paper, /검사지 인쇄·PDF/);
-  assert.match(paper, /SCORE_KEY_ROWS/);
+  assert.match(paper, /오프라인 행동유형 검사 · 질문지/);
+  assert.match(paper, /질문지·해설지 2장 인쇄/);
+  assert.match(paper, /SCORE_KEY_COLUMNS/);
+  assert.match(paper, /채점하고 결과 읽기/);
   assert.match(paper, /동점 판별 문항/);
   assert.match(appsScript, /SPREADSHEET_ID/);
   assert.match(appsScript, /getSheetDestination_/);
