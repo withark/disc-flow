@@ -1,0 +1,1 @@
+CREATE INDEX `disc_results_created_at_idx` ON `disc_results` (`created_at`);
