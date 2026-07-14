@@ -16,6 +16,8 @@ test("builds the DISC assessment product surface", async () => {
   assert.match(assessment, /진단 시작하기/);
   assert.match(assessment, /응답자 정보를 입력하고/);
   assert.match(assessment, /전체 지도에서 본 나의 결과/);
+  assert.match(assessment, /동기를 높이는 조건/);
+  assert.doesNotMatch(assessment, /data-testid="next-question"/);
   assert.doesNotMatch(assessment, /view === "home"/);
   assert.match(assessment, /관리자 대시보드/);
   assert.doesNotMatch(assessment, /Apps Script 웹앱 주소/);

@@ -9,6 +9,7 @@ import {
   ClipboardList,
   Download,
   FileSpreadsheet,
+  Gauge,
   LayoutDashboard,
   Link2,
   LockKeyhole,
@@ -19,10 +20,13 @@ import {
   RefreshCw,
   ShieldCheck,
   Shuffle,
+  Target,
+  TrendingUp,
   Users,
   UsersRound,
 } from "lucide-react";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { QUESTIONS, type DiscKey } from "./disc-questions";
 import {
   buildBalancedGroups,
   createTeamDebrief,
@@ -31,16 +35,9 @@ import {
   type TeamResultRecord,
 } from "./team-tools";
 
-type DiscKey = "D" | "I" | "S" | "C";
 type View = "info" | "quiz" | "result" | "admin";
 type AdminTab = "overview" | "groups" | "debrief";
 type Scores = Record<DiscKey, number>;
-
-type Question = {
-  context: string;
-  a: { mode: DiscKey; text: string };
-  b: { mode: DiscKey; text: string };
-};
 
 type ResultRecord = TeamResultRecord;
 
@@ -105,6 +102,10 @@ const MODES: Record<
     strength: string;
     watch: string;
     communication: string;
+    motivation: string;
+    underPressure: string;
+    collaboration: string;
+    growth: string;
   }
 > = {
   D: {
@@ -116,6 +117,10 @@ const MODES: Record<
     strength: "결단력, 도전 정신, 실행 속도, 문제 해결",
     watch: "속도를 내는 과정에서 다른 사람의 의견이나 세부 절차를 놓칠 수 있습니다.",
     communication: "핵심과 기대 결과를 먼저 말하고 선택지를 간결하게 제시해 보세요.",
+    motivation: "도전적인 목표, 빠른 의사결정, 결과를 직접 만들 수 있는 권한",
+    underPressure: "통제권을 잡고 결론을 서두르며 말이 평소보다 단호해질 수 있습니다.",
+    collaboration: "결론, 책임자, 기한이 분명하고 자율적으로 실행할 여지가 필요합니다.",
+    growth: "반대 의견과 실행 세부를 확인하는 시간을 두면 영향력이 더 오래갑니다.",
   },
   I: {
     name: "사교형",
@@ -126,6 +131,10 @@ const MODES: Record<
     strength: "표현력, 낙관성, 설득력, 관계 형성",
     watch: "흥미로운 가능성에 집중하다 일정이나 세부 실행을 놓칠 수 있습니다.",
     communication: "아이디어를 충분히 나눈 뒤 담당자와 기한을 명확히 정리해 보세요.",
+    motivation: "사람과의 상호작용, 아이디어 공유, 인정과 긍정적인 반응",
+    underPressure: "말이 많아지거나 낙관적으로 넘기면서 세부 후속 조치를 놓칠 수 있습니다.",
+    collaboration: "대화할 공간, 즉각적인 반응, 아이디어를 현실화할 실행 파트너가 필요합니다.",
+    growth: "아이디어를 우선순위, 담당자, 기한으로 마무리하면 신뢰가 높아집니다.",
   },
   S: {
     name: "안정형",
@@ -136,6 +145,10 @@ const MODES: Record<
     strength: "경청, 인내, 협력, 꾸준함",
     watch: "갑작스러운 변화나 갈등을 피하다 필요한 의견 표현이 늦어질 수 있습니다.",
     communication: "변화의 이유와 단계를 확인하고, 필요한 지원을 구체적으로 요청해 보세요.",
+    motivation: "예측 가능한 흐름, 신뢰 관계, 나의 기여가 실제 도움이 된다는 확신",
+    underPressure: "겉으로 수용하면서 불편함을 표현하지 않거나 변화를 미룰 수 있습니다.",
+    collaboration: "충분한 안내와 준비 시간, 일관된 약속, 편하게 의견을 말할 기회가 필요합니다.",
+    growth: "필요한 반대와 경계를 조금 더 일찍 표현하면 부담이 줄어듭니다.",
   },
   C: {
     name: "신중형",
@@ -146,35 +159,27 @@ const MODES: Record<
     strength: "분석력, 정확성, 체계성, 품질 관리",
     watch: "완성도를 높이려다 결정과 실행이 늦어지거나 표현이 지나치게 신중해질 수 있습니다.",
     communication: "판단 기준과 근거를 공유하되, 결정에 필요한 최소 정보와 기한을 정해 보세요.",
+    motivation: "명확한 기준, 충분한 정보, 높은 품질을 만들 수 있는 집중 시간",
+    underPressure: "정보를 더 모으고 오류를 피하려다 결정이 늦어지거나 비판적으로 보일 수 있습니다.",
+    collaboration: "목표, 기준, 근거가 문서화되고 차분히 검토할 수 있는 환경이 필요합니다.",
+    growth: "완벽한 답보다 결정에 충분한 기준과 마감을 먼저 정하면 실행력이 높아집니다.",
   },
 };
 
-const QUESTIONS: Question[] = [
-  { context: "새로운 일을 시작할 때", a: { mode: "D", text: "먼저 목표를 정하고 바로 움직인다" }, b: { mode: "I", text: "사람들과 아이디어를 나누며 분위기를 띄운다" } },
-  { context: "업무를 진행할 때", a: { mode: "S", text: "익숙한 흐름을 유지하며 차분히 이어간다" }, b: { mode: "C", text: "기준과 절차를 확인한 뒤 정확히 처리한다" } },
-  { context: "예상 밖의 문제가 생기면", a: { mode: "S", text: "주변을 살피며 모두가 편한 해법을 찾는다" }, b: { mode: "D", text: "핵심 문제를 짚고 빠르게 결정을 내린다" } },
-  { context: "회의에서 나는", a: { mode: "I", text: "떠오른 생각을 활발하게 제안한다" }, b: { mode: "C", text: "자료와 근거가 충분한지 먼저 살핀다" } },
-  { context: "중요한 결정을 앞두면", a: { mode: "C", text: "가능한 위험과 세부 조건을 검토한다" }, b: { mode: "D", text: "가장 효과적인 선택을 빠르게 확정한다" } },
-  { context: "동료와 함께 일할 때", a: { mode: "I", text: "대화를 자주 나누며 활력을 더한다" }, b: { mode: "S", text: "필요한 부분을 묵묵히 챙기고 지원한다" } },
-  { context: "목표가 높게 주어지면", a: { mode: "I", text: "사람들의 참여와 기대감을 끌어낸다" }, b: { mode: "D", text: "도전으로 받아들이고 성과를 밀어붙인다" } },
-  { context: "반복되는 업무에서는", a: { mode: "C", text: "오류 없이 정확하게 완성하는 데 집중한다" }, b: { mode: "S", text: "일정한 리듬으로 꾸준히 책임을 다한다" } },
-  { context: "갈등이 생겼을 때", a: { mode: "D", text: "내 입장과 원하는 결과를 분명히 말한다" }, b: { mode: "S", text: "상대의 마음을 듣고 관계를 안정시킨다" } },
-  { context: "설명을 들을 때", a: { mode: "C", text: "구체적인 수치와 논리적 근거가 중요하다" }, b: { mode: "I", text: "큰 그림과 흥미로운 가능성이 중요하다" } },
-  { context: "시간이 부족하면", a: { mode: "D", text: "우선순위를 과감히 정하고 실행한다" }, b: { mode: "C", text: "실수를 줄이기 위해 핵심 항목을 재확인한다" } },
-  { context: "낯선 사람들과 있을 때", a: { mode: "S", text: "먼저 분위기를 살피고 천천히 가까워진다" }, b: { mode: "I", text: "자연스럽게 대화를 시작하고 관계를 넓힌다" } },
-  { context: "팀의 방향이 불분명하면", a: { mode: "D", text: "내가 먼저 방향과 다음 행동을 제시한다" }, b: { mode: "I", text: "다양한 의견을 끌어내며 가능성을 넓힌다" } },
-  { context: "변화가 필요하다는 말을 들으면", a: { mode: "S", text: "무엇이 얼마나 달라지는지 단계부터 확인한다" }, b: { mode: "C", text: "변화의 근거와 예상 결과를 분석한다" } },
-  { context: "누군가 도움이 필요해 보이면", a: { mode: "S", text: "부담을 주지 않도록 조용히 필요한 것을 돕는다" }, b: { mode: "D", text: "문제 해결에 필요한 행동을 직접 제안한다" } },
-  { context: "아이디어를 평가할 때", a: { mode: "I", text: "사람들이 얼마나 흥미를 느낄지 본다" }, b: { mode: "C", text: "현실성과 논리적 빈틈이 없는지 본다" } },
-  { context: "성과를 높이기 위해", a: { mode: "C", text: "품질 기준과 측정 방법을 먼저 세운다" }, b: { mode: "D", text: "목표를 높이고 실행 속도를 끌어올린다" } },
-  { context: "팀 분위기가 가라앉으면", a: { mode: "I", text: "긍정적인 말과 새로운 제안으로 환기한다" }, b: { mode: "S", text: "한 사람씩 살피며 편안하게 이야기를 듣는다" } },
-  { context: "경쟁 상황에서는", a: { mode: "I", text: "나의 강점을 적극적으로 알리고 참여를 이끈다" }, b: { mode: "D", text: "이길 수 있는 전략을 정하고 강하게 실행한다" } },
-  { context: "약속한 일을 맡으면", a: { mode: "C", text: "요구사항을 빠짐없이 지켜 완성한다" }, b: { mode: "S", text: "중간에 흔들리지 않고 끝까지 꾸준히 한다" } },
-  { context: "반대 의견을 들으면", a: { mode: "D", text: "쟁점을 바로 확인하고 내 판단을 설명한다" }, b: { mode: "S", text: "상대가 중요하게 여기는 부분부터 이해한다" } },
-  { context: "발표를 준비할 때", a: { mode: "C", text: "정확한 자료와 빈틈없는 구성을 준비한다" }, b: { mode: "I", text: "청중의 관심을 끌 이야기와 표현을 준비한다" } },
-  { context: "완벽하지 않은 상황에서도", a: { mode: "D", text: "기회를 놓치지 않도록 일단 결정한다" }, b: { mode: "C", text: "중요한 조건이 충족될 때까지 조금 더 확인한다" } },
-  { context: "함께 일하기 좋은 환경은", a: { mode: "S", text: "서로 배려하며 예측 가능한 환경이다" }, b: { mode: "I", text: "자유롭게 소통하며 활기가 있는 환경이다" } },
-];
+const BLENDS: Record<string, { title: string; summary: string; contribution: string; balance: string }> = {
+  DI: { title: "빠른 설득형", summary: "결정을 내리는 속도와 사람을 움직이는 표현력이 함께 나타납니다.", contribution: "새로운 과제를 빠르게 시작하고 주변의 참여를 끌어냅니다.", balance: "낙관적인 확신만으로 세부 실행과 반대 의견을 건너뛰지 않도록 확인이 필요합니다." },
+  DS: { title: "단단한 실행형", summary: "목표를 밀어붙이는 힘과 사람을 안정적으로 챙기는 태도가 결합됩니다.", contribution: "성과를 향해 나아가면서도 팀이 따라올 수 있는 흐름을 만듭니다.", balance: "참다가 한 번에 단호해지기보다 기대와 불편을 초기에 공유하는 것이 좋습니다." },
+  DC: { title: "성과 기준형", summary: "빠른 결과 지향성과 높은 정확성 기준을 동시에 추구합니다.", contribution: "복잡한 문제의 핵심을 잡고 품질 높은 결론으로 연결합니다.", balance: "속도와 완성도를 모두 높이려다 자신과 타인에게 과도한 기준을 요구할 수 있습니다." },
+  ID: { title: "영향력 있는 추진형", summary: "사람의 공감을 얻은 뒤 빠르게 행동과 성과로 전환합니다.", contribution: "아이디어를 매력적으로 전달하고 팀의 실행 에너지를 높입니다.", balance: "새로운 가능성에 집중할수록 우선순위와 후속 책임을 명확히 해야 합니다." },
+  IS: { title: "관계 중심 촉진형", summary: "활발한 상호작용과 따뜻한 지원으로 편안한 참여를 만듭니다.", contribution: "사람들이 의견을 내고 서로 연결되도록 분위기를 조성합니다.", balance: "관계를 지키려다 필요한 결정이나 어려운 대화를 늦추지 않도록 주의합니다." },
+  IC: { title: "아이디어 구체화형", summary: "풍부한 가능성을 제안하면서 논리와 완성도도 함께 살핍니다.", contribution: "복잡한 내용을 이해하기 쉽게 전달하고 설득력 있는 안으로 발전시킵니다.", balance: "좋은 설명을 준비하느라 실제 실험과 실행 시점을 놓치지 않도록 합니다." },
+  SD: { title: "안정적 실행형", summary: "차분한 협력 태도 안에 필요한 순간의 결단력이 함께 있습니다.", contribution: "팀을 안정시키면서 약속한 결과를 끝까지 만들어 냅니다.", balance: "주변을 배려한 뒤에도 자신의 우선순위와 결정 이유를 분명히 표현해야 합니다." },
+  SI: { title: "따뜻한 협력형", summary: "신뢰를 쌓는 꾸준함과 긍정적인 관계 에너지가 결합됩니다.", contribution: "구성원이 소외되지 않도록 연결하고 편안한 협업 환경을 만듭니다.", balance: "모두의 만족을 기다리기보다 필요한 기준과 마감을 함께 확인하는 것이 좋습니다." },
+  SC: { title: "신뢰받는 운영형", summary: "일관된 실행과 세심한 품질 관리로 안정적인 결과를 만듭니다.", contribution: "절차를 정돈하고 실수를 줄이며 팀의 신뢰를 높입니다.", balance: "예측 가능한 방식을 선호해 새로운 시도나 빠른 변화에 늦게 반응할 수 있습니다." },
+  CD: { title: "전략적 분석형", summary: "정확한 분석을 바탕으로 명확하고 단호한 결정을 내립니다.", contribution: "위험을 구조적으로 검토하고 실질적인 해결책을 제시합니다.", balance: "근거가 충분하다고 판단한 뒤에는 다른 관점도 들을 여지를 남기는 것이 좋습니다." },
+  CI: { title: "논리적 제안형", summary: "정교한 분석을 이해하기 쉬운 설명과 아이디어로 전달합니다.", contribution: "자료와 메시지를 연결해 타인이 납득할 수 있는 제안을 만듭니다.", balance: "정보와 표현을 다듬는 데 머물지 않고 실행할 최소 조건을 정해야 합니다." },
+  CS: { title: "정교한 지원형", summary: "높은 정확성과 꾸준한 책임감으로 팀을 안정적으로 뒷받침합니다.", contribution: "중요한 세부를 놓치지 않고 약속된 품질을 지속적으로 유지합니다.", balance: "혼자 충분히 검토하고 감당하기보다 우선순위와 지원 필요를 일찍 공유해야 합니다." },
+};
 
 const EMPTY_SCORES: Scores = { D: 0, I: 0, S: 0, C: 0 };
 
@@ -219,6 +224,8 @@ export function DiscAssessment({ initialView = "info" }: { initialView?: "info" 
   const [participant, setParticipant] = useState({ name: "", team: "" });
   const [answers, setAnswers] = useState<Record<number, DiscKey>>({});
   const [currentQuestion, setCurrentQuestion] = useState(0);
+  const [isAdvancing, setIsAdvancing] = useState(false);
+  const advancingRef = useRef(false);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [adminPassword, setAdminPassword] = useState("");
   const [adminRecords, setAdminRecords] = useState<ResultRecord[]>([]);
@@ -243,6 +250,7 @@ export function DiscAssessment({ initialView = "info" }: { initialView?: "info" 
   const dominantModes = rankedModes.filter((mode) => scores[mode] === maxScore);
   const primaryResultMode = rankedModes[0];
   const secondaryMode = rankedModes[1];
+  const blendProfile = BLENDS[`${primaryResultMode}${secondaryMode}`];
 
   useEffect(() => {
     const timeout = window.setTimeout(() => {
@@ -266,27 +274,56 @@ export function DiscAssessment({ initialView = "info" }: { initialView?: "info" 
     if (!participant.name.trim()) return;
     setAnswers({});
     setCurrentQuestion(0);
+    setIsAdvancing(false);
+    advancingRef.current = false;
     setSaveState("idle");
     setView("quiz");
   }
 
   function chooseAnswer(mode: DiscKey) {
-    setAnswers((current) => ({ ...current, [currentQuestion]: mode }));
+    if (advancingRef.current) return;
+    advancingRef.current = true;
+    const finalAnswers = { ...answers, [currentQuestion]: mode };
+    setAnswers(finalAnswers);
+    setIsAdvancing(true);
+
+    window.setTimeout(() => {
+      if (currentQuestion === QUESTIONS.length - 1) {
+        void finishAssessment(finalAnswers);
+        return;
+      }
+      setCurrentQuestion(currentQuestion + 1);
+      setIsAdvancing(false);
+      advancingRef.current = false;
+    }, 180);
   }
 
-  async function finishAssessment() {
-    if (Object.keys(answers).length !== QUESTIONS.length) return;
+  async function finishAssessment(finalAnswers: Record<number, DiscKey>) {
+    if (Object.keys(finalAnswers).length !== QUESTIONS.length) {
+      setIsAdvancing(false);
+      advancingRef.current = false;
+      return;
+    }
+    const finalScores = calculateScores(finalAnswers);
+    const finalRankedModes = rankModes(finalScores);
+    const finalMaxScore = Math.max(...Object.values(finalScores));
+    const finalDominantModes = finalRankedModes.filter((mode) => finalScores[mode] === finalMaxScore);
+    const finalSecondaryMode = finalRankedModes[1];
+    const finalCoordinates = calculateCoordinates(finalScores);
+
+    setIsAdvancing(false);
+    advancingRef.current = false;
     setView("result");
     setSaveState("saving");
 
-    const dominant = dominantModes.join("/");
+    const dominant = finalDominantModes.join("/");
     const resultPayload = {
       name: participant.name.trim(),
       team: participant.team.trim(),
-      scores,
+      scores: finalScores,
       dominant,
-      secondary: secondaryMode,
-      ...coordinates,
+      secondary: finalSecondaryMode,
+      ...finalCoordinates,
     };
     try {
       if (externalSheetMode) {
@@ -301,10 +338,10 @@ export function DiscAssessment({ initialView = "info" }: { initialView?: "info" 
             recordId,
             createdAt: new Date().toISOString(),
             ...resultPayload,
-            d: scores.D,
-            i: scores.I,
-            s: scores.S,
-            c: scores.C,
+            d: finalScores.D,
+            i: finalScores.I,
+            s: finalScores.S,
+            c: finalScores.C,
           }),
         });
       } else {
@@ -546,7 +583,7 @@ export function DiscAssessment({ initialView = "info" }: { initialView?: "info" 
               </label>
               <div className="notice-box">
                 <ShieldCheck size={20} />
-                <p><strong>응답 안내</strong><br />평소의 실제 행동을 떠올리고, 오래 고민하지 말고 더 가까운 쪽을 선택하세요.</p>
+                <p><strong>응답 안내</strong><br />최근 6개월의 실제 행동을 떠올리고, 오래 고민하지 말고 처음 더 가까웠던 쪽을 선택하세요.</p>
               </div>
               <button className="primary-button full" type="submit" data-testid="start-assessment">진단 시작하기 <ArrowRight size={18} /></button>
             </form>
@@ -556,14 +593,11 @@ export function DiscAssessment({ initialView = "info" }: { initialView?: "info" 
         {view === "quiz" && (
           <section className="quiz-view page-enter">
             <div className="quiz-topline">
-              <button className="back-button" onClick={() => currentQuestion === 0 ? setView("info") : setCurrentQuestion(currentQuestion - 1)}>
-                <ArrowLeft size={17} /> 이전
-              </button>
               <span>{currentQuestion + 1} / {QUESTIONS.length}</span>
             </div>
             <div className="progress-track"><span style={{ width: `${((currentQuestion + 1) / QUESTIONS.length) * 100}%` }} /></div>
             <div className="question-card">
-              <span className="question-kicker">평소의 나와 더 가까운 쪽은?</span>
+              <span className="question-kicker">최근 실제 행동에서 더 가까운 쪽은?</span>
               <h2>{QUESTIONS[currentQuestion].context}</h2>
               <div className="answer-grid">
                 {(["a", "b"] as const).map((side) => {
@@ -574,6 +608,7 @@ export function DiscAssessment({ initialView = "info" }: { initialView?: "info" 
                       key={side}
                       className={`answer-option ${selected ? "selected" : ""}`}
                       onClick={() => chooseAnswer(option.mode)}
+                      disabled={isAdvancing}
                       style={{ "--option-color": MODES[option.mode].color } as React.CSSProperties}
                       data-testid={`answer-${side}`}
                     >
@@ -584,14 +619,6 @@ export function DiscAssessment({ initialView = "info" }: { initialView?: "info" 
                   );
                 })}
               </div>
-              <button
-                className="primary-button full quiz-next"
-                disabled={!answers[currentQuestion]}
-                onClick={() => currentQuestion === QUESTIONS.length - 1 ? finishAssessment() : setCurrentQuestion(currentQuestion + 1)}
-                data-testid="next-question"
-              >
-                {currentQuestion === QUESTIONS.length - 1 ? "결과 확인하기" : "다음 문항"} <ArrowRight size={18} />
-              </button>
             </div>
           </section>
         )}
@@ -697,13 +724,34 @@ export function DiscAssessment({ initialView = "info" }: { initialView?: "info" 
             </div>
 
             <section className="insight-band">
-              <div className="section-heading"><div><span>INSIGHT</span><h3>{primaryResultMode}{secondaryMode} 조합으로 보는 나</h3></div></div>
+              <div className="section-heading"><div><span>INSIGHT</span><h3>{primaryResultMode}{secondaryMode} · {blendProfile.title}</h3></div><p>주 유형과 보조 유형을 함께 해석했습니다.</p></div>
+              <div className="blend-profile" style={{ "--mode-color": MODES[primaryResultMode].color, "--mode-soft": MODES[primaryResultMode].soft } as React.CSSProperties}>
+                <div className="blend-profile-main">
+                  <span>{primaryResultMode} 주 유형 + {secondaryMode} 보조 유형</span>
+                  <h4>{blendProfile.title}</h4>
+                  <p>{blendProfile.summary}</p>
+                </div>
+                <div className="blend-profile-details">
+                  <article><span>팀에 주는 기여</span><p>{blendProfile.contribution}</p></article>
+                  <article><span>균형 포인트</span><p>{blendProfile.balance}</p></article>
+                </div>
+              </div>
+
+              <div className="deep-insight-heading"><span>DEEP DIVE</span><h4>{primaryResultMode} · {MODES[primaryResultMode].name}을 더 깊이 이해하기</h4></div>
+              <div className="deep-insight-grid">
+                <article><Target size={19} /><span>동기를 높이는 조건</span><p>{MODES[primaryResultMode].motivation}</p></article>
+                <article><Gauge size={19} /><span>압박 상황의 반응</span><p>{MODES[primaryResultMode].underPressure}</p></article>
+                <article><UsersRound size={19} /><span>협업에 필요한 것</span><p>{MODES[primaryResultMode].collaboration}</p></article>
+                <article><TrendingUp size={19} /><span>성장 포인트</span><p>{MODES[primaryResultMode].growth}</p></article>
+              </div>
+
+              <div className="deep-insight-heading action-heading"><span>ACTION</span><h4>결과를 행동으로 옮기기</h4></div>
               <div className="insight-grid">
                 <article><span>강점</span><p>{MODES[primaryResultMode].strength}</p></article>
                 <article><span>주의할 점</span><p>{MODES[primaryResultMode].watch}</p></article>
                 <article><span>소통 팁</span><p>{MODES[primaryResultMode].communication}</p></article>
               </div>
-              <p className="blend-note"><strong>보조 유형 {secondaryMode} · {MODES[secondaryMode].name}</strong>의 특성이 함께 나타납니다. 상황과 역할에 따라 네 유형의 행동을 모두 사용할 수 있습니다.</p>
+              <p className="blend-note">상황과 역할에 따라 네 유형의 행동을 모두 사용할 수 있으며, 이 결과는 현재 자주 선택하는 행동 경향을 보여줍니다.</p>
             </section>
 
             <div className="retake-area no-print">
