@@ -1016,8 +1016,13 @@ export function DiscAssessment({ initialView = "info" }: { initialView?: "info" 
                         <FileSpreadsheet size={15} /> Google Sheets {googleSheetsConnected ? "연결됨" : "미연결"}
                       </span>
                     )}
-                    <button className="secondary-button" onClick={openPaperAssessment} title="현장용 한 장 검사지 열기">
-                      <Printer size={17} /> 1장 검사지
+                    <button
+                      className="primary-button offline-print-button"
+                      onClick={openPaperAssessment}
+                      title="A4 한 장용 오프라인 검사지 열기"
+                      data-testid="open-offline-assessment"
+                    >
+                      <Printer size={17} /> 오프라인 검사지 출력
                     </button>
                     {externalSheetMode ? (
                       <button className="secondary-button" onClick={copyParticipantLink} title="검사 참여 주소 복사">

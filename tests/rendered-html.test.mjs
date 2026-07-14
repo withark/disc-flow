@@ -26,6 +26,8 @@ test("builds the DISC assessment product surface", async () => {
   assert.doesNotMatch(assessment, /data-testid="next-question"/);
   assert.doesNotMatch(assessment, /view === "home"/);
   assert.match(assessment, /관리자 대시보드/);
+  assert.match(assessment, /오프라인 검사지 출력/);
+  assert.match(assessment, /data-testid="open-offline-assessment"/);
   assert.match(assessment, /Google Sheets · DISC 응답 저장 완료/);
   assert.doesNotMatch(assessment, /mode: "no-cors"/);
   assert.doesNotMatch(assessment, /Apps Script 웹앱 주소/);
