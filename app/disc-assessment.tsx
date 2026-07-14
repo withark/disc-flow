@@ -44,7 +44,7 @@ type Question = {
 
 type ResultRecord = TeamResultRecord;
 
-const DEFAULT_SHEET_API = "https://script.google.com/macros/s/AKfycbzCNlntJyIgl-JZ1ClaPfuhAiH93BQZsh756VPqf916mUyAhRE0gUjY41WSsy11yVJH/exec";
+const DEFAULT_SHEET_API = "https://script.google.com/macros/s/AKfycbwxrjQdO4bq9DDHHiffgj_lBGMGSFJwRJOe9_lPvnnLeiy028OIc7xJviZ-yZOzX4rU/exec";
 
 function validSheetApi(value: string) {
   try {
