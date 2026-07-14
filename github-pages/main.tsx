@@ -5,6 +5,6 @@ import "../app/globals.css";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <DiscAssessment />
+    <DiscAssessment initialView={/\/admin\/?$/.test(window.location.pathname) ? "admin" : "info"} />
   </StrictMode>,
 );

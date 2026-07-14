@@ -9,6 +9,7 @@ test("builds the DISC assessment product surface", async () => {
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
     readFile(new URL("../.openai/hosting.json", import.meta.url), "utf8"),
     access(new URL("../dist/server/index.js", import.meta.url)),
+    access(new URL("../dist-pages/admin/index.html", import.meta.url)),
   ]);
 
   assert.match(page, /DISC 행동유형 진단 \| DISC FLOW/);
@@ -17,6 +18,7 @@ test("builds the DISC assessment product surface", async () => {
   assert.match(assessment, /전체 지도에서 본 나의 결과/);
   assert.doesNotMatch(assessment, /view === "home"/);
   assert.match(assessment, /관리자 대시보드/);
+  assert.doesNotMatch(assessment, /Apps Script 웹앱 주소/);
   assert.match(assessment, /QUESTIONS\.length/);
   assert.match(layout, /og\.png/);
   assert.match(hosting, /"d1": "DB"/);

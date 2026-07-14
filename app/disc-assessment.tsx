@@ -44,6 +44,8 @@ type Question = {
 
 type ResultRecord = TeamResultRecord;
 
+const DEFAULT_SHEET_API = "https://script.google.com/macros/s/AKfycbzCNlntJyIgl-JZ1ClaPfuhAiH93BQZsh756VPqf916mUyAhRE0gUjY41WSsy11yVJH/exec";
+
 function validSheetApi(value: string) {
   try {
     const url = new URL(value);
@@ -212,8 +214,8 @@ function formatDate(value: string) {
   }).format(new Date(value));
 }
 
-export function DiscAssessment() {
-  const [view, setView] = useState<View>("info");
+export function DiscAssessment({ initialView = "info" }: { initialView?: "info" | "admin" }) {
+  const [view, setView] = useState<View>(initialView);
   const [participant, setParticipant] = useState({ name: "", team: "" });
   const [answers, setAnswers] = useState<Record<number, DiscKey>>({});
   const [currentQuestion, setCurrentQuestion] = useState(0);
@@ -232,8 +234,7 @@ export function DiscAssessment() {
   const [sheetSyncState, setSheetSyncState] = useState<"idle" | "syncing" | "success" | "error">("idle");
   const [sheetSyncMessage, setSheetSyncMessage] = useState("");
   const [externalSheetMode, setExternalSheetMode] = useState(false);
-  const [sheetApi, setSheetApi] = useState("");
-  const [sheetApiDraft, setSheetApiDraft] = useState("");
+  const sheetApi = DEFAULT_SHEET_API;
 
   const scores = useMemo(() => calculateScores(answers), [answers]);
   const rankedModes = useMemo(() => rankModes(scores), [scores]);
@@ -247,14 +248,8 @@ export function DiscAssessment() {
     const timeout = window.setTimeout(() => {
       const params = new URLSearchParams(window.location.search);
       const isGitHubPages = window.location.hostname.endsWith("github.io");
-      const queryApi = params.get("sheetApi")?.trim() ?? "";
-      const savedApi = window.localStorage.getItem("disc-flow-sheet-api")?.trim() ?? "";
-      const configuredApi = validSheetApi(queryApi) ? queryApi : validSheetApi(savedApi) ? savedApi : "";
       setExternalSheetMode(isGitHubPages);
-      setSheetApi(configuredApi);
-      setSheetApiDraft(configuredApi);
-      if (configuredApi) window.localStorage.setItem("disc-flow-sheet-api", configuredApi);
-      if (params.has("admin")) setView("admin");
+      if (params.has("admin") || /\/admin\/?$/.test(window.location.pathname)) setView("admin");
     }, 0);
 
     return () => window.clearTimeout(timeout);
@@ -262,10 +257,8 @@ export function DiscAssessment() {
 
   function goHome() {
     setView("info");
-    const params = new URLSearchParams();
-    if (externalSheetMode && sheetApi) params.set("sheetApi", sheetApi);
-    const query = params.toString();
-    window.history.replaceState({}, "", `${window.location.pathname}${query ? `?${query}` : ""}`);
+    const participantPath = window.location.pathname.replace(/\/admin\/?$/, "/");
+    window.history.replaceState({}, "", participantPath);
   }
 
   function beginAssessment(event: FormEvent<HTMLFormElement>) {
@@ -335,11 +328,8 @@ export function DiscAssessment() {
     setAdminError("");
     try {
       if (externalSheetMode) {
-        const configuredApi = sheetApiDraft.trim();
-        if (!validSheetApi(configuredApi)) throw new Error("Apps Script 웹앱의 /exec 주소를 확인해 주세요.");
-        const results = await loadSheetResults(configuredApi, adminPassword);
-        setSheetApi(configuredApi);
-        window.localStorage.setItem("disc-flow-sheet-api", configuredApi);
+        if (!validSheetApi(sheetApi)) throw new Error("Google Sheets 연결 설정을 확인해 주세요.");
+        const results = await loadSheetResults(sheetApi, adminPassword);
         setAdminRecords(results);
         setGoogleSheetsConnected(true);
       } else {
@@ -479,11 +469,10 @@ export function DiscAssessment() {
   }
 
   async function copyParticipantLink() {
-    if (!sheetApi) return;
     const url = new URL(window.location.href);
+    url.pathname = url.pathname.replace(/\/admin\/?$/, "/");
     url.search = "";
     url.hash = "";
-    url.searchParams.set("sheetApi", sheetApi);
     await navigator.clipboard.writeText(url.toString());
     setSheetSyncState("success");
     setSheetSyncMessage("검사 참여 링크를 복사했습니다.");
@@ -504,10 +493,8 @@ export function DiscAssessment() {
           aria-label="관리자 대시보드"
           onClick={() => {
             setView("admin");
-            const params = new URLSearchParams();
-            params.set("admin", "1");
-            if (externalSheetMode && sheetApi) params.set("sheetApi", sheetApi);
-            window.history.replaceState({}, "", `${window.location.pathname}?${params.toString()}`);
+            const participantPath = window.location.pathname.replace(/\/admin\/?$/, "/").replace(/\/$/, "");
+            window.history.replaceState({}, "", `${participantPath}/admin/`);
           }}
         >
           <LockKeyhole size={18} />
@@ -529,9 +516,6 @@ export function DiscAssessment() {
                 <span><BarChart3 size={17} /> 즉시 결과 확인</span>
                 <span><ShieldCheck size={17} /> 약 5분 소요</span>
               </div>
-              {externalSheetMode && !sheetApi && (
-                <div className="connection-warning"><FileSpreadsheet size={18} /><span>현재 결과 저장소가 연결되지 않았습니다. 운영자는 관리자 화면에서 Google Sheets를 먼저 연결하세요.</span></div>
-              )}
             </div>
 
             <form className="info-form intake-form" onSubmit={beginAssessment}>
@@ -737,18 +721,6 @@ export function DiscAssessment() {
                 <h2>관리자 대시보드</h2>
                 <p>응답 현황과 팀별 DISC 분포를 확인합니다.</p>
                 <form onSubmit={loadAdmin}>
-                  {externalSheetMode && (
-                    <label>Apps Script 웹앱 주소
-                      <input
-                        type="url"
-                        value={sheetApiDraft}
-                        onChange={(event) => setSheetApiDraft(event.target.value)}
-                        placeholder="https://script.google.com/macros/s/.../exec"
-                        required
-                        data-testid="sheet-api"
-                      />
-                    </label>
-                  )}
                   <label>관리자 비밀번호
                     <input type="password" value={adminPassword} onChange={(event) => setAdminPassword(event.target.value)} placeholder="비밀번호 입력" required data-testid="admin-password" />
                   </label>
@@ -767,7 +739,7 @@ export function DiscAssessment() {
                       <FileSpreadsheet size={15} /> Google Sheets {googleSheetsConnected ? "연결됨" : "미연결"}
                     </span>
                     {externalSheetMode ? (
-                      <button className="secondary-button" onClick={copyParticipantLink} disabled={!sheetApi} title="Google Sheets 연결 정보가 포함된 검사 링크 복사">
+                      <button className="secondary-button" onClick={copyParticipantLink} title="검사 참여 주소 복사">
                         <Link2 size={17} /> 검사 링크 복사
                       </button>
                     ) : (
