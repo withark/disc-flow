@@ -19,7 +19,6 @@ import {
   RefreshCw,
   ShieldCheck,
   Shuffle,
-  Sparkles,
   Users,
   UsersRound,
 } from "lucide-react";
@@ -33,7 +32,7 @@ import {
 } from "./team-tools";
 
 type DiscKey = "D" | "I" | "S" | "C";
-type View = "home" | "info" | "quiz" | "result" | "admin";
+type View = "info" | "quiz" | "result" | "admin";
 type AdminTab = "overview" | "groups" | "debrief";
 type Scores = Record<DiscKey, number>;
 
@@ -214,7 +213,7 @@ function formatDate(value: string) {
 }
 
 export function DiscAssessment() {
-  const [view, setView] = useState<View>("home");
+  const [view, setView] = useState<View>("info");
   const [participant, setParticipant] = useState({ name: "", team: "" });
   const [answers, setAnswers] = useState<Record<number, DiscKey>>({});
   const [currentQuestion, setCurrentQuestion] = useState(0);
@@ -241,24 +240,28 @@ export function DiscAssessment() {
   const coordinates = useMemo(() => calculateCoordinates(scores), [scores]);
   const maxScore = Math.max(...Object.values(scores));
   const dominantModes = rankedModes.filter((mode) => scores[mode] === maxScore);
-  const primaryMode = rankedModes[0];
+  const primaryResultMode = rankedModes[0];
   const secondaryMode = rankedModes[1];
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const isGitHubPages = window.location.hostname.endsWith("github.io");
-    const queryApi = params.get("sheetApi")?.trim() ?? "";
-    const savedApi = window.localStorage.getItem("disc-flow-sheet-api")?.trim() ?? "";
-    const configuredApi = validSheetApi(queryApi) ? queryApi : validSheetApi(savedApi) ? savedApi : "";
-    setExternalSheetMode(isGitHubPages);
-    setSheetApi(configuredApi);
-    setSheetApiDraft(configuredApi);
-    if (configuredApi) window.localStorage.setItem("disc-flow-sheet-api", configuredApi);
-    if (params.has("admin")) setView("admin");
+    const timeout = window.setTimeout(() => {
+      const params = new URLSearchParams(window.location.search);
+      const isGitHubPages = window.location.hostname.endsWith("github.io");
+      const queryApi = params.get("sheetApi")?.trim() ?? "";
+      const savedApi = window.localStorage.getItem("disc-flow-sheet-api")?.trim() ?? "";
+      const configuredApi = validSheetApi(queryApi) ? queryApi : validSheetApi(savedApi) ? savedApi : "";
+      setExternalSheetMode(isGitHubPages);
+      setSheetApi(configuredApi);
+      setSheetApiDraft(configuredApi);
+      if (configuredApi) window.localStorage.setItem("disc-flow-sheet-api", configuredApi);
+      if (params.has("admin")) setView("admin");
+    }, 0);
+
+    return () => window.clearTimeout(timeout);
   }, []);
 
   function goHome() {
-    setView("home");
+    setView("info");
     const params = new URLSearchParams();
     if (externalSheetMode && sheetApi) params.set("sheetApi", sheetApi);
     const query = params.toString();
@@ -512,61 +515,29 @@ export function DiscAssessment() {
       </header>
 
       <main>
-        {view === "home" && (
-          <section className="home-view page-enter">
-            <div className="home-main">
-              <div className="eyebrow"><Sparkles size={16} /> 나를 이해하는 5분</div>
-              <h1>DISC 행동유형 진단</h1>
-              <p className="home-lead">
-                일하는 방식과 소통 습관을 네 가지 행동 경향으로 살펴보세요.
-                정답은 없고, 지금의 나와 더 가까운 문장을 고르면 됩니다.
+        {view === "info" && (
+          <section className="intake-view page-enter">
+            <div className="intake-copy">
+              <div className="eyebrow"><ClipboardList size={16} /> DISC 행동유형 진단</div>
+              <h1>응답자 정보를 입력하고<br />바로 시작하세요</h1>
+              <p>
+                평소 일하는 방식과 소통 습관을 떠올리며, 지금의 나와 더 가까운 문장을 선택하면 됩니다.
+                정답은 없습니다.
               </p>
+              <div className="home-meta" aria-label="진단 정보">
+                <span><ClipboardList size={17} /> 24문항</span>
+                <span><BarChart3 size={17} /> 즉시 결과 확인</span>
+                <span><ShieldCheck size={17} /> 약 5분 소요</span>
+              </div>
               {externalSheetMode && !sheetApi && (
                 <div className="connection-warning"><FileSpreadsheet size={18} /><span>현재 결과 저장소가 연결되지 않았습니다. 운영자는 관리자 화면에서 Google Sheets를 먼저 연결하세요.</span></div>
               )}
-              <button className="primary-button large" onClick={() => setView("info")} data-testid="start-assessment">
-                진단 시작하기 <ArrowRight size={19} />
-              </button>
-              <div className="home-meta" aria-label="진단 정보">
-                <span><ClipboardList size={17} /> 24문항</span>
-                <span><BarChart3 size={17} /> 즉시 결과</span>
-                <span><ShieldCheck size={17} /> 응답 안전 저장</span>
-              </div>
             </div>
 
-            <div className="disc-map" aria-label="DISC 네 가지 행동유형">
-              <div className="map-cross" aria-hidden="true" />
-              {MODE_ORDER.map((mode) => (
-                <div key={mode} className={`map-mode map-${mode.toLowerCase()}`} style={{ "--mode-color": MODES[mode].color } as React.CSSProperties}>
-                  <strong>{mode}</strong>
-                  <span>{MODES[mode].name}</span>
-                </div>
-              ))}
-              <span className="map-axis axis-top">빠른 속도</span>
-              <span className="map-axis axis-bottom">차분한 속도</span>
-              <span className="map-axis axis-left">과업 중심</span>
-              <span className="map-axis axis-right">사람 중심</span>
-            </div>
-
-            <div className="mode-strip">
-              {MODE_ORDER.map((mode) => (
-                <article key={mode} className="mode-intro" style={{ borderColor: MODES[mode].color }}>
-                  <span style={{ color: MODES[mode].color }}>{mode}</span>
-                  <div><strong>{MODES[mode].name}</strong><p>{MODES[mode].title}</p></div>
-                </article>
-              ))}
-            </div>
-            <p className="disclaimer">이 진단은 자기이해와 대화를 돕는 참고 도구이며, 의학적·심리학적 진단을 대신하지 않습니다.</p>
-          </section>
-        )}
-
-        {view === "info" && (
-          <section className="narrow-view page-enter">
-            <button className="back-button" onClick={() => setView("home")}><ArrowLeft size={17} /> 돌아가기</button>
-            <div className="step-label">STEP 1</div>
-            <h2>진단을 시작할게요</h2>
-            <p className="section-copy">결과표에 표시할 정보를 입력하세요. 팀명은 관리자 집계에서만 사용됩니다.</p>
-            <form className="info-form" onSubmit={beginAssessment}>
+            <form className="info-form intake-form" onSubmit={beginAssessment}>
+              <div className="step-label">START</div>
+              <h2>응답자 정보</h2>
+              <p className="section-copy">결과표에 표시할 정보를 입력하세요. 팀명은 관리자 집계에서만 사용됩니다.</p>
               <label>
                 이름 <span>필수</span>
                 <input
@@ -593,7 +564,7 @@ export function DiscAssessment() {
                 <ShieldCheck size={20} />
                 <p><strong>응답 안내</strong><br />평소의 실제 행동을 떠올리고, 오래 고민하지 말고 더 가까운 쪽을 선택하세요.</p>
               </div>
-              <button className="primary-button full" type="submit">24문항 시작 <ArrowRight size={18} /></button>
+              <button className="primary-button full" type="submit" data-testid="start-assessment">진단 시작하기 <ArrowRight size={18} /></button>
             </form>
           </section>
         )}
@@ -644,18 +615,18 @@ export function DiscAssessment() {
         {view === "result" && (
           <section className="result-view page-enter">
             <div className="result-actions no-print">
-              <button className="back-button" onClick={goHome}><ArrowLeft size={17} /> 홈</button>
+              <button className="back-button" onClick={goHome}><ArrowLeft size={17} /> 처음으로</button>
               <button className="secondary-button" onClick={() => window.print()}><Printer size={17} /> 인쇄·PDF</button>
             </div>
-            <div className="result-hero" style={{ "--result-color": MODES[primaryMode].color, "--result-soft": MODES[primaryMode].soft } as React.CSSProperties}>
+            <div className="result-hero" style={{ "--result-color": MODES[primaryResultMode].color, "--result-soft": MODES[primaryResultMode].soft } as React.CSSProperties}>
               <div>
                 <span className="result-owner">{participant.name}님의 DISC 결과</span>
                 <div className="result-type-line">
                   <span className="result-letter">{dominantModes.join("")}</span>
                   <div><p>대표 행동유형</p><h1>{dominantModes.map((mode) => MODES[mode].name).join(" · ")}</h1></div>
                 </div>
-                <h2>{MODES[primaryMode].title}</h2>
-                <p>{MODES[primaryMode].summary}</p>
+                <h2>{MODES[primaryResultMode].title}</h2>
+                <p>{MODES[primaryResultMode].summary}</p>
               </div>
               <div className={`save-chip ${saveState}`}>
                 {saveState === "saving" && "결과 저장 중"}
@@ -663,6 +634,58 @@ export function DiscAssessment() {
                 {saveState === "error" && "결과는 표시되었지만 저장하지 못했습니다"}
               </div>
             </div>
+
+            <section className="result-overview">
+              <div className="section-heading">
+                <div><span>DISC OVERVIEW</span><h3>전체 지도에서 본 나의 결과</h3></div>
+                <p>강조된 영역이 나의 대표 행동유형입니다.</p>
+              </div>
+              <div className="result-overview-layout">
+                <div className="disc-map" aria-label="DISC 전체 지도와 나의 대표 행동유형">
+                  <div className="map-cross" aria-hidden="true" />
+                  {MODE_ORDER.map((mode) => {
+                    const isDominant = dominantModes.includes(mode);
+                    return (
+                      <div
+                        key={mode}
+                        className={`map-mode map-${mode.toLowerCase()} ${isDominant ? "is-result" : ""}`}
+                        style={{ "--mode-color": MODES[mode].color } as React.CSSProperties}
+                        aria-current={isDominant ? "true" : undefined}
+                      >
+                        <strong>{mode}</strong>
+                        <span>{MODES[mode].name}</span>
+                        {isDominant && <small>나의 유형</small>}
+                      </div>
+                    );
+                  })}
+                  <span className="map-axis axis-top">빠른 속도</span>
+                  <span className="map-axis axis-bottom">차분한 속도</span>
+                  <span className="map-axis axis-left">과업 중심</span>
+                  <span className="map-axis axis-right">사람 중심</span>
+                </div>
+
+                <div className="mode-strip result-mode-strip">
+                  {MODE_ORDER.map((mode) => {
+                    const isDominant = dominantModes.includes(mode);
+                    return (
+                      <article
+                        key={mode}
+                        className={`mode-intro ${isDominant ? "is-result" : ""}`}
+                        style={{ borderColor: MODES[mode].color, "--mode-color": MODES[mode].color } as React.CSSProperties}
+                      >
+                        <span style={{ color: MODES[mode].color }}>{mode}</span>
+                        <div>
+                          <strong>{MODES[mode].name}</strong>
+                          <p>{MODES[mode].title}</p>
+                          {isDominant && <small>나의 대표 유형</small>}
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+              </div>
+              <p className="result-disclaimer">이 진단은 자기이해와 대화를 돕는 참고 도구이며, 의학적·심리학적 진단을 대신하지 않습니다.</p>
+            </section>
 
             <div className="result-grid">
               <section className="result-section score-section">
@@ -683,18 +706,18 @@ export function DiscAssessment() {
                 <div className="coordinate-map">
                   <span className="quadrant q-d">D</span><span className="quadrant q-i">I</span>
                   <span className="quadrant q-c">C</span><span className="quadrant q-s">S</span>
-                  <i className="result-dot" style={{ left: `${coordinates.focus}%`, top: `${100 - coordinates.pace}%`, background: MODES[primaryMode].color }} />
+                  <i className="result-dot" style={{ left: `${coordinates.focus}%`, top: `${100 - coordinates.pace}%`, background: MODES[primaryResultMode].color }} />
                 </div>
                 <div className="coordinate-legend"><span>과업 중심</span><span>사람 중심</span></div>
               </section>
             </div>
 
             <section className="insight-band">
-              <div className="section-heading"><div><span>INSIGHT</span><h3>{primaryMode}{secondaryMode} 조합으로 보는 나</h3></div></div>
+              <div className="section-heading"><div><span>INSIGHT</span><h3>{primaryResultMode}{secondaryMode} 조합으로 보는 나</h3></div></div>
               <div className="insight-grid">
-                <article><span>강점</span><p>{MODES[primaryMode].strength}</p></article>
-                <article><span>주의할 점</span><p>{MODES[primaryMode].watch}</p></article>
-                <article><span>소통 팁</span><p>{MODES[primaryMode].communication}</p></article>
+                <article><span>강점</span><p>{MODES[primaryResultMode].strength}</p></article>
+                <article><span>주의할 점</span><p>{MODES[primaryResultMode].watch}</p></article>
+                <article><span>소통 팁</span><p>{MODES[primaryResultMode].communication}</p></article>
               </div>
               <p className="blend-note"><strong>보조 유형 {secondaryMode} · {MODES[secondaryMode].name}</strong>의 특성이 함께 나타납니다. 상황과 역할에 따라 네 유형의 행동을 모두 사용할 수 있습니다.</p>
             </section>
