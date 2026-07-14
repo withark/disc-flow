@@ -19,6 +19,7 @@ export default defineConfig({
       input: {
         main: resolve(pagesRoot, "index.html"),
         admin: resolve(pagesRoot, "admin/index.html"),
+        paper: resolve(pagesRoot, "paper/index.html"),
       },
     },
   },

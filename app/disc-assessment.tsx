@@ -33,6 +33,7 @@ import {
   calculateDiscScores,
   DISC_MODE_ORDER,
   EMPTY_DISC_SCORES,
+  type DiscScores,
 } from "./disc-results";
 import {
   buildBalancedGroups,
@@ -45,6 +46,21 @@ type View = "info" | "quiz" | "result" | "admin";
 type AdminTab = "overview" | "groups" | "debrief";
 
 type ResultRecord = TeamResultRecord;
+type AssessmentResultPayload = {
+  name: string;
+  team: string;
+  scores: DiscScores;
+  dominant: string;
+  secondary: string;
+  pace: number;
+  focus: number;
+};
+type ResultSaveRequest = {
+  payload: AssessmentResultPayload;
+  recordId: string;
+  createdAt: string;
+  destination: "google-sheets" | "local-api";
+};
 
 const DEFAULT_SHEET_API = "https://script.google.com/macros/s/AKfycbwxrjQdO4bq9DDHHiffgj_lBGMGSFJwRJOe9_lPvnnLeiy028OIc7xJviZ-yZOzX4rU/exec";
 
@@ -244,6 +260,8 @@ export function DiscAssessment({ initialView = "info" }: { initialView?: "info" 
   const [isAdvancing, setIsAdvancing] = useState(false);
   const advancingRef = useRef(false);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [saveError, setSaveError] = useState("");
+  const [pendingSave, setPendingSave] = useState<ResultSaveRequest | null>(null);
   const [adminPassword, setAdminPassword] = useState("");
   const [adminRecords, setAdminRecords] = useState<ResultRecord[]>([]);
   const [adminAuthenticated, setAdminAuthenticated] = useState(false);
@@ -293,6 +311,12 @@ export function DiscAssessment({ initialView = "info" }: { initialView?: "info" 
     window.history.replaceState({}, "", participantPath);
   }
 
+  function openPaperAssessment() {
+    const participantPath = window.location.pathname.replace(/admin\/?$/, "");
+    const rootPath = participantPath.endsWith("/") ? participantPath : `${participantPath}/`;
+    window.open(new URL(`${rootPath}paper/`, window.location.origin).toString(), "_blank", "noopener,noreferrer");
+  }
+
   function beginAssessment(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!participant.name.trim()) return;
@@ -301,6 +325,8 @@ export function DiscAssessment({ initialView = "info" }: { initialView?: "info" 
     setIsAdvancing(false);
     advancingRef.current = false;
     setSaveState("idle");
+    setSaveError("");
+    setPendingSave(null);
     setView("quiz");
   }
 
@@ -322,6 +348,44 @@ export function DiscAssessment({ initialView = "info" }: { initialView?: "info" 
     }, 180);
   }
 
+  async function persistResult(request: ResultSaveRequest) {
+    setSaveState("saving");
+    setSaveError("");
+
+    try {
+      if (request.destination === "google-sheets") {
+        if (!validSheetApi(sheetApi)) throw new Error("Google Sheets 연결 주소를 확인해 주세요.");
+        const response = await fetch(sheetApi, {
+          method: "POST",
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body: JSON.stringify({
+            action: "save",
+            recordId: request.recordId,
+            createdAt: request.createdAt,
+            ...request.payload,
+            d: request.payload.scores.D,
+            i: request.payload.scores.I,
+            s: request.payload.scores.S,
+            c: request.payload.scores.C,
+          }),
+        });
+        const result = (await response.json()) as { ok?: boolean; error?: string };
+        if (!response.ok || !result.ok) throw new Error(result.error || "Google Sheets 저장 응답이 올바르지 않습니다.");
+      } else {
+        const response = await fetch("/api/results", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(request.payload),
+        });
+        if (!response.ok) throw new Error("결과 저장 요청에 실패했습니다.");
+      }
+      setSaveState("saved");
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : "결과 저장에 실패했습니다.");
+      setSaveState("error");
+    }
+  }
+
   async function finishAssessment(finalAnswers: Record<number, DiscKey>) {
     if (Object.keys(finalAnswers).length !== QUESTIONS.length) {
       setIsAdvancing(false);
@@ -334,10 +398,9 @@ export function DiscAssessment({ initialView = "info" }: { initialView?: "info" 
     setIsAdvancing(false);
     advancingRef.current = false;
     setView("result");
-    setSaveState("saving");
 
     const dominant = finalAnalysis.dominantModes.join("/");
-    const resultPayload = {
+    const resultPayload: AssessmentResultPayload = {
       name: participant.name.trim(),
       team: participant.team.trim(),
       scores: finalScores,
@@ -345,37 +408,14 @@ export function DiscAssessment({ initialView = "info" }: { initialView?: "info" 
       secondary: finalAnalysis.secondaryMode ?? "",
       ...finalAnalysis.coordinates,
     };
-    try {
-      if (externalSheetMode) {
-        if (!sheetApi) throw new Error("Google Sheets 연결 정보가 없습니다.");
-        const recordId = window.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-        await fetch(sheetApi, {
-          method: "POST",
-          mode: "no-cors",
-          headers: { "Content-Type": "text/plain;charset=utf-8" },
-          body: JSON.stringify({
-            action: "save",
-            recordId,
-            createdAt: new Date().toISOString(),
-            ...resultPayload,
-            d: finalScores.D,
-            i: finalScores.I,
-            s: finalScores.S,
-            c: finalScores.C,
-          }),
-        });
-      } else {
-        const response = await fetch("/api/results", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(resultPayload),
-        });
-        if (!response.ok) throw new Error("save failed");
-      }
-      setSaveState("saved");
-    } catch {
-      setSaveState("error");
-    }
+    const saveRequest: ResultSaveRequest = {
+      payload: resultPayload,
+      recordId: window.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      createdAt: new Date().toISOString(),
+      destination: externalSheetMode ? "google-sheets" : "local-api",
+    };
+    setPendingSave(saveRequest);
+    await persistResult(saveRequest);
   }
 
   async function loadAdmin(event?: FormEvent<HTMLFormElement>) {
@@ -668,8 +708,10 @@ export function DiscAssessment({ initialView = "info" }: { initialView?: "info" 
               </div>
               <div className={`save-chip ${saveState}`}>
                 {saveState === "saving" && "결과 저장 중"}
-                {saveState === "saved" && <><Check size={15} /> 결과 저장 완료</>}
-                {saveState === "error" && "결과는 표시되었지만 저장하지 못했습니다"}
+                {saveState === "saved" && <><Check size={15} /> {externalSheetMode ? "Google Sheets 저장 완료" : "결과 저장 완료"}</>}
+                {saveState === "error" && (
+                  <><span title={saveError}>결과 저장 실패</span><button type="button" onClick={() => pendingSave && void persistResult(pendingSave)} disabled={!pendingSave}>다시 저장</button></>
+                )}
               </div>
             </div>
 
@@ -844,6 +886,9 @@ export function DiscAssessment({ initialView = "info" }: { initialView?: "info" 
                     <span className={`sheets-status ${googleSheetsConnected ? "connected" : ""}`}>
                       <FileSpreadsheet size={15} /> Google Sheets {googleSheetsConnected ? "연결됨" : "미연결"}
                     </span>
+                    <button className="secondary-button" onClick={openPaperAssessment} title="현장용 한 장 검사지 열기">
+                      <Printer size={17} /> 1장 검사지
+                    </button>
                     {externalSheetMode ? (
                       <button className="secondary-button" onClick={copyParticipantLink} title="검사 참여 주소 복사">
                         <Link2 size={17} /> 검사 링크 복사
