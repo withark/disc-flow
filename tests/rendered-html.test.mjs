@@ -19,8 +19,9 @@ test("builds the DISC assessment product surface", async () => {
   assert.match(assessment, /응답자 정보를 입력하고/);
   assert.match(assessment, /전체 지도에서 본 나의 결과/);
   assert.match(assessment, /동기를 높이는 조건/);
-  assert.match(assessment, /공동 주 행동유형/);
-  assert.match(assessment, /동점\/균형/);
+  assert.match(assessment, /동점 판별로 1유형 확정/);
+  assert.match(assessment, /dominant: primaryMode/);
+  assert.doesNotMatch(assessment, /공동 주 행동유형|균형 행동유형/);
   assert.doesNotMatch(assessment, /data-testid="next-question"/);
   assert.doesNotMatch(assessment, /view === "home"/);
   assert.match(assessment, /관리자 대시보드/);
@@ -31,6 +32,7 @@ test("builds the DISC assessment product surface", async () => {
   assert.match(paper, /현장용 DISC 행동유형 검사지/);
   assert.match(paper, /검사지 인쇄·PDF/);
   assert.match(paper, /SCORE_KEY_ROWS/);
+  assert.match(paper, /동점 판별 문항/);
   assert.match(layout, /og\.png/);
   assert.match(hosting, /"d1": "DB"/);
   assert.doesNotMatch(`${page}\n${layout}`, /codex-preview|Your site is taking shape|react-loading-skeleton/i);

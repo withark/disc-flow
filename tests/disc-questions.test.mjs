@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { QUESTIONS } from "../app/disc-questions.ts";
+import {
+  FINAL_TIE_BREAK_QUESTION,
+  QUESTIONS,
+  TIE_BREAK_QUESTIONS,
+} from "../app/disc-questions.ts";
 
 test("keeps the DISC question set structurally balanced", () => {
   const modeCounts = { D: 0, I: 0, S: 0, C: 0 };
@@ -25,4 +29,14 @@ test("keeps the DISC question set structurally balanced", () => {
     IS: 4,
   });
   assert.equal(new Set(QUESTIONS.map((question) => question.context)).size, QUESTIONS.length);
+});
+
+test("provides realistic tie-break situations for every DISC mode", () => {
+  assert.equal(TIE_BREAK_QUESTIONS.length, 3);
+
+  for (const question of [...TIE_BREAK_QUESTIONS, FINAL_TIE_BREAK_QUESTION]) {
+    assert.ok(question.context.length > 15);
+    assert.deepEqual(Object.keys(question.options), ["D", "I", "S", "C"]);
+    for (const option of Object.values(question.options)) assert.ok(option.length > 8);
+  }
 });

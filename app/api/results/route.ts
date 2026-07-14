@@ -8,9 +8,8 @@ const MODES = ["D", "I", "S", "C"] as const;
 
 type DiscMode = (typeof MODES)[number];
 
-function validModeList(value: string) {
-  const parts = value.split("/");
-  return parts.length > 0 && parts.length <= 4 && new Set(parts).size === parts.length && parts.every((part) => MODES.includes(part as DiscMode));
+function validMode(value: string): value is DiscMode {
+  return MODES.includes(value as DiscMode);
 }
 
 export async function GET(request: Request) {
@@ -59,11 +58,10 @@ export async function POST(request: Request) {
     }
     const rankedModes = [...MODES].sort((a, b) => (scores?.[b] ?? 0) - (scores?.[a] ?? 0));
     const maxScore = scores?.[rankedModes[0]] ?? 0;
-    const expectedDominantModes = rankedModes.filter((mode) => scores?.[mode] === maxScore);
-    const expectedDominant = expectedDominantModes.join("/");
-    const expectedSecondary = rankedModes.find((mode) => !expectedDominantModes.includes(mode)) ?? "";
+    const dominant = payload.dominant?.trim() ?? "";
+    const expectedSecondary = rankedModes.find((mode) => mode !== dominant) ?? "";
     const secondary = payload.secondary?.trim() ?? "";
-    if (!payload.dominant || !validModeList(payload.dominant) || payload.dominant !== expectedDominant || secondary !== expectedSecondary) {
+    if (!validMode(dominant) || scores?.[dominant] !== maxScore || secondary !== expectedSecondary) {
       return Response.json({ error: "유형 정보가 올바르지 않습니다." }, { status: 400 });
     }
     if (!Number.isInteger(payload.pace) || !Number.isInteger(payload.focus) || (payload.pace ?? -1) < 0 || (payload.pace ?? 101) > 100 || (payload.focus ?? -1) < 0 || (payload.focus ?? 101) > 100) {
@@ -78,7 +76,7 @@ export async function POST(request: Request) {
       i: scores?.I ?? 0,
       s: scores?.S ?? 0,
       c: scores?.C ?? 0,
-      dominant: payload.dominant,
+      dominant,
       secondary,
       pace: payload.pace ?? 0,
       focus: payload.focus ?? 0,

@@ -1,10 +1,11 @@
 "use client";
 
 import { ArrowLeft, Printer } from "lucide-react";
-import { QUESTIONS } from "./disc-questions";
+import { FINAL_TIE_BREAK_QUESTION, QUESTIONS, TIE_BREAK_QUESTIONS } from "./disc-questions";
 
 const QUESTION_COLUMNS = [QUESTIONS.slice(0, 12), QUESTIONS.slice(12)];
 const SCORE_KEY_ROWS = Array.from({ length: 4 }, (_, row) => QUESTIONS.slice(row * 6, row * 6 + 6));
+const PAPER_TIE_BREAK_QUESTIONS = [...TIE_BREAK_QUESTIONS, FINAL_TIE_BREAK_QUESTION];
 
 export function PaperAssessment() {
   function returnToAdmin() {
@@ -68,7 +69,25 @@ export function PaperAssessment() {
               </p>
             ))}
           </div>
-          <p className="paper-note">가장 높은 점수가 대표유형입니다. 최고점이 2개면 공동 주 유형, 3개 이상이면 균형 프로필로 해석합니다. 본 검사는 자기이해와 대화를 위한 참고 도구입니다.</p>
+          <section className="paper-tie-break" aria-label="동점 판별 문항">
+            <header>
+              <strong>동점 판별</strong>
+              <span>최고점 유형이 2개 이상이면 1~3번에서 동점 유형의 선택지만 비교해 표시합니다. 가장 많이 고른 유형이 1유형이며, 다시 같으면 최종 문항으로 확정합니다.</span>
+            </header>
+            <div>
+              {PAPER_TIE_BREAK_QUESTIONS.map((question, index) => (
+                <article key={question.context}>
+                  <h3><b>{index < TIE_BREAK_QUESTIONS.length ? index + 1 : "최종"}</b>{question.context}</h3>
+                  <p>
+                    {(["D", "I", "S", "C"] as const).map((mode) => (
+                      <span key={mode}><i aria-hidden="true" /><b>{mode}</b>{question.options[mode]}</span>
+                    ))}
+                  </p>
+                </article>
+              ))}
+            </div>
+          </section>
+          <p className="paper-note">가장 높은 점수가 1유형입니다. 최고점 동점일 때만 위의 동점 판별 절차로 하나의 1유형을 확정합니다. 본 검사는 자기이해와 대화를 위한 참고 도구입니다.</p>
         </footer>
       </article>
     </main>

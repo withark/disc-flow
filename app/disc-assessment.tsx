@@ -26,13 +26,20 @@ import {
   UsersRound,
 } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { QUESTIONS, type DiscKey } from "./disc-questions";
+import {
+  FINAL_TIE_BREAK_QUESTION,
+  QUESTIONS,
+  TIE_BREAK_QUESTIONS,
+  type DiscKey,
+} from "./disc-questions";
 import {
   analyzeDiscAnswers,
   analyzeDiscScores,
   calculateDiscScores,
   DISC_MODE_ORDER,
   EMPTY_DISC_SCORES,
+  findSecondaryMode,
+  findTieBreakLeaders,
   type DiscScores,
 } from "./disc-results";
 import {
@@ -42,8 +49,14 @@ import {
   type TeamResultRecord,
 } from "./team-tools";
 
-type View = "info" | "quiz" | "result" | "admin";
+type View = "info" | "quiz" | "tiebreak" | "result" | "admin";
 type AdminTab = "overview" | "groups" | "debrief";
+
+type TieBreakSummary = {
+  candidates: DiscKey[];
+  votes: DiscScores;
+  finalSelection?: DiscKey;
+};
 
 type ResultRecord = TeamResultRecord;
 type AssessmentResultPayload = {
@@ -71,6 +84,13 @@ function validSheetApi(value: string) {
   } catch {
     return false;
   }
+}
+
+function createResultRecordIdentity() {
+  return {
+    recordId: window.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    createdAt: new Date().toISOString(),
+  };
 }
 
 function loadSheetResults(sheetApi: string, adminPassword: string) {
@@ -204,33 +224,6 @@ const BLENDS: Record<string, BehaviorProfile> = {
   CS: { title: "정교한 지원형", summary: "높은 정확성과 꾸준한 책임감으로 팀을 안정적으로 뒷받침합니다.", contribution: "중요한 세부를 놓치지 않고 약속된 품질을 지속적으로 유지합니다.", balance: "혼자 충분히 검토하고 감당하기보다 우선순위와 지원 필요를 일찍 공유해야 합니다." },
 };
 
-const TIED_PAIR_PROFILES: Record<string, BehaviorProfile> = {
-  DI: { title: "추진·영향 공동형", summary: "결과를 빠르게 만들려는 행동과 사람의 참여를 끌어내는 행동이 같은 강도로 나타납니다.", contribution: "방향을 제시하면서 주변의 공감과 실행 에너지를 함께 높입니다.", balance: "속도와 낙관성이 함께 커질 때 세부 조건과 반대 의견을 의도적으로 확인해야 합니다." },
-  DS: { title: "결단·안정 공동형", summary: "필요할 때 단호하게 결정하면서도 관계와 실행 안정성을 같은 비중으로 살핍니다.", contribution: "성과를 향해 움직이면서 구성원이 따라올 수 있는 안정적인 흐름을 만듭니다.", balance: "배려하며 참다가 갑자기 결론을 밀어붙이지 않도록 기대와 우려를 초기에 공유해야 합니다." },
-  DC: { title: "성과·품질 공동형", summary: "결과를 내는 속도와 기준을 지키는 정확성이 같은 강도로 나타납니다.", contribution: "핵심 문제를 빠르게 구조화하고 높은 완성도의 해결책으로 연결합니다.", balance: "속도와 완성도를 모두 높이려다 자신과 타인에게 과도한 기준을 요구하지 않도록 조절해야 합니다." },
-  IS: { title: "관계·지원 공동형", summary: "활발하게 사람을 연결하는 행동과 차분하게 지원하는 행동이 함께 나타납니다.", contribution: "구성원이 편하게 참여하고 서로 신뢰할 수 있는 협업 분위기를 만듭니다.", balance: "관계를 지키려다 필요한 결정이나 불편한 대화를 미루지 않도록 기준과 기한을 확인해야 합니다." },
-  IC: { title: "소통·분석 공동형", summary: "아이디어를 넓히는 표현력과 근거를 점검하는 분석력이 같은 강도로 나타납니다.", contribution: "복잡한 정보를 이해하기 쉬운 제안으로 바꾸고 사람들의 납득을 이끌어냅니다.", balance: "설명과 검토를 다듬는 데 머물지 않도록 실행에 필요한 최소 조건과 시점을 정해야 합니다." },
-  SC: { title: "안정·품질 공동형", summary: "꾸준한 지원 행동과 정확한 기준 관리가 같은 강도로 나타납니다.", contribution: "절차를 안정적으로 운영하고 세부 오류를 줄여 팀의 신뢰를 높입니다.", balance: "익숙하고 검증된 방식을 선호해 변화 대응이 늦어지지 않도록 작은 실험의 범위를 정해보는 것이 좋습니다." },
-};
-
-function balancedProfile(modeCount: number): BehaviorProfile {
-  if (modeCount === 4) {
-    return {
-      title: "전반적 균형 프로필",
-      summary: "D·I·S·C가 같은 최고점으로, 특정 한 유형보다 상황에 따라 여러 행동을 고르게 사용하는 경향이 나타납니다.",
-      contribution: "과업, 관계, 속도, 품질 관점을 폭넓게 전환하며 다양한 역할에 적응할 수 있습니다.",
-      balance: "상황 적응성이 높은 만큼 나의 기본 우선순위가 모호해질 수 있어, 중요한 순간에는 판단 기준을 먼저 정하는 것이 좋습니다.",
-    };
-  }
-
-  return {
-    title: "다중 강점 균형형",
-    summary: "세 가지 행동유형이 같은 최고점으로 나타나 한 가지 방식보다 상황에 따라 여러 강점을 함께 사용합니다.",
-    contribution: "서로 다른 관점을 연결하고 역할 요구에 맞춰 행동 방식을 유연하게 바꿀 수 있습니다.",
-    balance: "여러 관점을 동시에 만족시키려다 결정 기준이 흐려지지 않도록 현재 가장 중요한 목표를 먼저 정해야 합니다.",
-  };
-}
-
 function modeLabel(key: string) {
   const modes = key.split("/").filter(Boolean);
   if (!modes.length) return "-";
@@ -259,6 +252,14 @@ export function DiscAssessment({ initialView = "info" }: { initialView?: "info" 
   const [currentQuestion, setCurrentQuestion] = useState(0);
   const [isAdvancing, setIsAdvancing] = useState(false);
   const advancingRef = useRef(false);
+  const [completedAnswers, setCompletedAnswers] = useState<Record<number, DiscKey> | null>(null);
+  const [resolvedPrimaryMode, setResolvedPrimaryMode] = useState<DiscKey | null>(null);
+  const [tieCandidates, setTieCandidates] = useState<DiscKey[]>([]);
+  const [activeTieCandidates, setActiveTieCandidates] = useState<DiscKey[]>([]);
+  const [tieBreakVotes, setTieBreakVotes] = useState<DiscScores>({ ...EMPTY_DISC_SCORES });
+  const [tieBreakQuestion, setTieBreakQuestion] = useState(0);
+  const [selectedTieMode, setSelectedTieMode] = useState<DiscKey | null>(null);
+  const [tieBreakSummary, setTieBreakSummary] = useState<TieBreakSummary | null>(null);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [saveError, setSaveError] = useState("");
   const [pendingSave, setPendingSave] = useState<ResultSaveRequest | null>(null);
@@ -281,18 +282,14 @@ export function DiscAssessment({ initialView = "info" }: { initialView?: "info" 
   const scores = useMemo(() => calculateDiscScores(answers), [answers]);
   const resultAnalysis = useMemo(() => analyzeDiscScores(scores), [scores]);
   const coordinates = resultAnalysis.coordinates;
-  const dominantModes = resultAnalysis.dominantModes;
-  const primaryResultMode = resultAnalysis.primaryMode;
-  const secondaryMode = resultAnalysis.secondaryMode ?? resultAnalysis.rankedModes[1];
-  const isTiedResult = resultAnalysis.kind !== "single";
-  const dominantCode = dominantModes.join("");
-  const resultProfile = isTiedResult
-    ? dominantModes.length === 2
-      ? TIED_PAIR_PROFILES[dominantCode]
-      : balancedProfile(dominantModes.length)
-    : BLENDS[`${primaryResultMode}${secondaryMode}`];
-  const resultColor = isTiedResult ? "#2f6f5e" : MODES[primaryResultMode].color;
-  const resultSoft = isTiedResult ? "#edf5f1" : MODES[primaryResultMode].soft;
+  const primaryResultMode = resolvedPrimaryMode ?? resultAnalysis.primaryMode;
+  const secondaryMode = findSecondaryMode(resultAnalysis, primaryResultMode) ?? resultAnalysis.rankedModes[1];
+  const resultProfile = BLENDS[`${primaryResultMode}${secondaryMode}`];
+  const resultColor = MODES[primaryResultMode].color;
+  const resultSoft = MODES[primaryResultMode].soft;
+  const currentTieBreakQuestion = tieBreakQuestion < TIE_BREAK_QUESTIONS.length
+    ? TIE_BREAK_QUESTIONS[tieBreakQuestion]
+    : FINAL_TIE_BREAK_QUESTION;
 
   useEffect(() => {
     const timeout = window.setTimeout(() => {
@@ -324,6 +321,14 @@ export function DiscAssessment({ initialView = "info" }: { initialView?: "info" 
     setCurrentQuestion(0);
     setIsAdvancing(false);
     advancingRef.current = false;
+    setCompletedAnswers(null);
+    setResolvedPrimaryMode(null);
+    setTieCandidates([]);
+    setActiveTieCandidates([]);
+    setTieBreakVotes({ ...EMPTY_DISC_SCORES });
+    setTieBreakQuestion(0);
+    setSelectedTieMode(null);
+    setTieBreakSummary(null);
     setSaveState("idle");
     setSaveError("");
     setPendingSave(null);
@@ -386,32 +391,102 @@ export function DiscAssessment({ initialView = "info" }: { initialView?: "info" 
     }
   }
 
-  async function finishAssessment(finalAnswers: Record<number, DiscKey>) {
+  function finishAssessment(finalAnswers: Record<number, DiscKey>) {
     if (Object.keys(finalAnswers).length !== QUESTIONS.length) {
       setIsAdvancing(false);
       advancingRef.current = false;
       return;
     }
     const finalAnalysis = analyzeDiscAnswers(finalAnswers);
-    const finalScores = finalAnalysis.scores;
 
+    setIsAdvancing(false);
+    advancingRef.current = false;
+    if (finalAnalysis.dominantModes.length > 1) {
+      setCompletedAnswers(finalAnswers);
+      setTieCandidates(finalAnalysis.dominantModes);
+      setActiveTieCandidates(finalAnalysis.dominantModes);
+      setTieBreakVotes({ ...EMPTY_DISC_SCORES });
+      setTieBreakQuestion(0);
+      setSelectedTieMode(null);
+      setView("tiebreak");
+      return;
+    }
+
+    void completeAssessment(finalAnswers, finalAnalysis.primaryMode, null);
+  }
+
+  function chooseTieBreakAnswer(mode: DiscKey) {
+    if (advancingRef.current || !completedAnswers) return;
+    advancingRef.current = true;
+    setSelectedTieMode(mode);
+    setIsAdvancing(true);
+
+    window.setTimeout(() => {
+      if (tieBreakQuestion < TIE_BREAK_QUESTIONS.length) {
+        const nextVotes = { ...tieBreakVotes, [mode]: tieBreakVotes[mode] + 1 };
+        setTieBreakVotes(nextVotes);
+
+        if (tieBreakQuestion < TIE_BREAK_QUESTIONS.length - 1) {
+          setTieBreakQuestion(tieBreakQuestion + 1);
+          setSelectedTieMode(null);
+          setIsAdvancing(false);
+          advancingRef.current = false;
+          return;
+        }
+
+        const leaders = findTieBreakLeaders(tieCandidates, nextVotes);
+        if (leaders.length === 1) {
+          void completeAssessment(completedAnswers, leaders[0], {
+            candidates: tieCandidates,
+            votes: nextVotes,
+          });
+          return;
+        }
+
+        setActiveTieCandidates(leaders);
+        setTieBreakQuestion(TIE_BREAK_QUESTIONS.length);
+        setSelectedTieMode(null);
+        setIsAdvancing(false);
+        advancingRef.current = false;
+        return;
+      }
+
+      void completeAssessment(completedAnswers, mode, {
+        candidates: tieCandidates,
+        votes: tieBreakVotes,
+        finalSelection: mode,
+      });
+    }, 180);
+  }
+
+  async function completeAssessment(
+    finalAnswers: Record<number, DiscKey>,
+    primaryMode: DiscKey,
+    summary: TieBreakSummary | null,
+  ) {
+    const finalAnalysis = analyzeDiscAnswers(finalAnswers);
+    const finalScores = finalAnalysis.scores;
+    const resultSecondaryMode = findSecondaryMode(finalAnalysis, primaryMode);
+
+    setResolvedPrimaryMode(primaryMode);
+    setTieBreakSummary(summary);
+    setSelectedTieMode(null);
     setIsAdvancing(false);
     advancingRef.current = false;
     setView("result");
 
-    const dominant = finalAnalysis.dominantModes.join("/");
     const resultPayload: AssessmentResultPayload = {
       name: participant.name.trim(),
       team: participant.team.trim(),
       scores: finalScores,
-      dominant,
-      secondary: finalAnalysis.secondaryMode ?? "",
+      dominant: primaryMode,
+      secondary: resultSecondaryMode ?? "",
       ...finalAnalysis.coordinates,
     };
+    const recordIdentity = createResultRecordIdentity();
     const saveRequest: ResultSaveRequest = {
       payload: resultPayload,
-      recordId: window.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`,
-      createdAt: new Date().toISOString(),
+      ...recordIdentity,
       destination: externalSheetMode ? "google-sheets" : "local-api",
     };
     setPendingSave(saveRequest);
@@ -687,6 +762,45 @@ export function DiscAssessment({ initialView = "info" }: { initialView?: "info" 
           </section>
         )}
 
+        {view === "tiebreak" && (
+          <section className="quiz-view page-enter" data-testid="tie-break-view">
+            <div className="quiz-topline">
+              <span>
+                {tieBreakQuestion < TIE_BREAK_QUESTIONS.length
+                  ? `동점 판별 ${tieBreakQuestion + 1} / ${TIE_BREAK_QUESTIONS.length}`
+                  : "최종 동점 판별"}
+              </span>
+            </div>
+            <div className="progress-track tie-progress">
+              <span style={{ width: tieBreakQuestion < TIE_BREAK_QUESTIONS.length ? `${((tieBreakQuestion + 1) / TIE_BREAK_QUESTIONS.length) * 100}%` : "100%" }} />
+            </div>
+            <div className="question-card tie-break-card">
+              <span className="question-kicker">동점 유형 중 실제 행동에 더 가까운 선택</span>
+              <h2>{currentTieBreakQuestion.context}</h2>
+              <div className="answer-grid">
+                {activeTieCandidates.map((mode, index) => {
+                  const selected = selectedTieMode === mode;
+                  return (
+                    <button
+                      key={mode}
+                      className={`answer-option ${selected ? "selected" : ""}`}
+                      onClick={() => chooseTieBreakAnswer(mode)}
+                      disabled={isAdvancing}
+                      style={{ "--option-color": "#2f6f5e" } as React.CSSProperties}
+                      data-testid={`tie-break-${mode}`}
+                    >
+                      <span className="choice-letter">{String.fromCharCode(65 + index)}</span>
+                      <span>{currentTieBreakQuestion.options[mode]}</span>
+                      <i>{selected && <Check size={17} />}</i>
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="tie-break-note">기본 점수는 바꾸지 않고, 동점 유형 중 1유형의 우선순위만 결정합니다.</p>
+            </div>
+          </section>
+        )}
+
         {view === "result" && (
           <section className="result-view page-enter">
             <div className="result-actions no-print">
@@ -697,14 +811,14 @@ export function DiscAssessment({ initialView = "info" }: { initialView?: "info" 
               <div>
                 <span className="result-owner">{participant.name}님의 DISC 결과</span>
                 <div className="result-type-line">
-                  <span className={`result-letter result-letter-${dominantModes.length}`}>{dominantCode}</span>
+                  <span className="result-letter">{primaryResultMode}</span>
                   <div>
-                    <p>{resultAnalysis.kind === "single" ? "대표 행동유형" : resultAnalysis.kind === "dual" ? "공동 주 행동유형" : "균형 행동유형"}</p>
-                    <h1>{dominantModes.map((mode) => MODES[mode].name).join(" · ")}</h1>
+                    <p>1유형 · 대표 행동유형</p>
+                    <h1>{MODES[primaryResultMode].name}</h1>
                   </div>
                 </div>
-                <h2>{isTiedResult ? resultProfile.title : MODES[primaryResultMode].title}</h2>
-                <p>{isTiedResult ? resultProfile.summary : MODES[primaryResultMode].summary}</p>
+                <h2>{MODES[primaryResultMode].title}</h2>
+                <p>{MODES[primaryResultMode].summary}</p>
               </div>
               <div className={`save-chip ${saveState}`}>
                 {saveState === "saving" && "결과 저장 중"}
@@ -718,13 +832,13 @@ export function DiscAssessment({ initialView = "info" }: { initialView?: "info" 
             <section className="result-overview">
               <div className="section-heading">
                 <div><span>DISC OVERVIEW</span><h3>전체 지도에서 본 나의 결과</h3></div>
-                <p>{isTiedResult ? "같은 최고점을 받은 영역을 함께 강조했습니다." : "강조된 영역이 나의 대표 행동유형입니다."}</p>
+                <p>강조된 영역이 나의 1유형입니다.</p>
               </div>
               <div className="result-overview-layout">
                 <div className="disc-map" aria-label="DISC 전체 지도와 나의 대표 행동유형">
                   <div className="map-cross" aria-hidden="true" />
                   {MODE_ORDER.map((mode) => {
-                    const isDominant = dominantModes.includes(mode);
+                    const isDominant = primaryResultMode === mode;
                     return (
                       <div
                         key={mode}
@@ -734,7 +848,7 @@ export function DiscAssessment({ initialView = "info" }: { initialView?: "info" 
                       >
                         <strong>{mode}</strong>
                         <span>{MODES[mode].name}</span>
-                        {isDominant && <small>{resultAnalysis.kind === "single" ? "나의 유형" : resultAnalysis.kind === "dual" ? "공동 주 유형" : "균형 유형"}</small>}
+                        {isDominant && <small>나의 1유형</small>}
                       </div>
                     );
                   })}
@@ -746,7 +860,7 @@ export function DiscAssessment({ initialView = "info" }: { initialView?: "info" 
 
                 <div className="mode-strip result-mode-strip">
                   {MODE_ORDER.map((mode) => {
-                    const isDominant = dominantModes.includes(mode);
+                    const isDominant = primaryResultMode === mode;
                     return (
                       <article
                         key={mode}
@@ -757,7 +871,7 @@ export function DiscAssessment({ initialView = "info" }: { initialView?: "info" 
                         <div>
                           <strong>{MODES[mode].name}</strong>
                           <p>{MODES[mode].title}</p>
-                          {isDominant && <small>{resultAnalysis.kind === "single" ? "나의 대표 유형" : resultAnalysis.kind === "dual" ? "공동 주 유형" : "균형 유형"}</small>}
+                          {isDominant && <small>나의 1유형</small>}
                         </div>
                       </article>
                     );
@@ -772,8 +886,8 @@ export function DiscAssessment({ initialView = "info" }: { initialView?: "info" 
                 <div className="section-heading"><div><span>PROFILE</span><h3>유형별 점수</h3></div><p>각 유형은 최대 12점입니다.</p></div>
                 <div className="score-list">
                   {MODE_ORDER.map((mode) => (
-                    <div className="score-row" key={mode}>
-                      <div className="score-name"><b style={{ color: MODES[mode].color }}>{mode}</b><span>{MODES[mode].name}</span></div>
+                    <div className={`score-row ${mode === primaryResultMode ? "is-primary" : ""}`} key={mode}>
+                      <div className="score-name"><b style={{ color: MODES[mode].color }}>{mode}</b><span>{MODES[mode].name}</span>{mode === primaryResultMode && <em>1유형</em>}</div>
                       <div className="score-track"><span style={{ width: `${(scores[mode] / 12) * 100}%`, background: MODES[mode].color }} /></div>
                       <strong>{scores[mode]}</strong>
                     </div>
@@ -792,14 +906,30 @@ export function DiscAssessment({ initialView = "info" }: { initialView?: "info" 
               </section>
             </div>
 
+            {tieBreakSummary && (
+              <section className="tie-resolution" data-testid="tie-resolution">
+                <div>
+                  <span>TIE BREAK</span>
+                  <h3>동점 판별로 1유형 확정</h3>
+                </div>
+                <p>
+                  기본 검사에서 {tieBreakSummary.candidates.map((mode) => `${mode} ${scores[mode]}점`).join(" · ")}으로 최고점이 같았습니다.
+                  {" "}추가 상황문항 선택은 {tieBreakSummary.candidates.map((mode) => `${mode} ${tieBreakSummary.votes[mode]}회`).join(" · ")}였고,
+                  {tieBreakSummary.finalSelection
+                    ? ` 마지막 우선순위 문항에서 ${primaryResultMode}를 선택해 1유형으로 확정했습니다.`
+                    : ` ${primaryResultMode}가 가장 많이 선택되어 1유형으로 확정됐습니다.`}
+                </p>
+              </section>
+            )}
+
             <section className="insight-band">
               <div className="section-heading">
-                <div><span>INSIGHT</span><h3>{isTiedResult ? dominantCode : `${primaryResultMode}${secondaryMode}`} · {resultProfile.title}</h3></div>
-                <p>{isTiedResult ? "같은 최고점 유형을 우선순위 없이 함께 해석했습니다." : "주 유형과 보조 유형을 함께 해석했습니다."}</p>
+                <div><span>INSIGHT</span><h3>{primaryResultMode}{secondaryMode} · {resultProfile.title}</h3></div>
+                <p>1유형과 다음으로 높은 유형을 함께 해석했습니다.</p>
               </div>
               <div className="blend-profile" style={{ "--mode-color": resultColor, "--mode-soft": resultSoft } as React.CSSProperties}>
                 <div className="blend-profile-main">
-                  <span>{isTiedResult ? `${dominantModes.join(" + ")} ${resultAnalysis.kind === "dual" ? "공동 주 유형" : "균형 프로필"}` : `${primaryResultMode} 주 유형 + ${secondaryMode} 보조 유형`}</span>
+                  <span>{primaryResultMode} 1유형 + {secondaryMode} 보조 유형</span>
                   <h4>{resultProfile.title}</h4>
                   <p>{resultProfile.summary}</p>
                 </div>
@@ -809,49 +939,21 @@ export function DiscAssessment({ initialView = "info" }: { initialView?: "info" 
                 </div>
               </div>
 
-              {isTiedResult ? (
-                <>
-                  <div className="deep-insight-heading"><span>DEEP DIVE</span><h4>공동 최고점 유형별 이해</h4></div>
-                  <div className={`tie-mode-grid tie-count-${dominantModes.length}`}>
-                    {dominantModes.map((mode) => (
-                      <article key={mode} style={{ "--mode-color": MODES[mode].color, "--mode-soft": MODES[mode].soft } as React.CSSProperties}>
-                        <header><b>{mode}</b><div><strong>{MODES[mode].name}</strong><span>{MODES[mode].title}</span></div></header>
-                        <div><span>주요 강점</span><p>{MODES[mode].strength}</p></div>
-                        <div><span>압박 상황의 반응</span><p>{MODES[mode].underPressure}</p></div>
-                        <div><span>협업에 필요한 것</span><p>{MODES[mode].collaboration}</p></div>
-                      </article>
-                    ))}
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div className="deep-insight-heading"><span>DEEP DIVE</span><h4>{primaryResultMode} · {MODES[primaryResultMode].name}을 더 깊이 이해하기</h4></div>
-                  <div className="deep-insight-grid">
-                    <article><Target size={19} /><span>동기를 높이는 조건</span><p>{MODES[primaryResultMode].motivation}</p></article>
-                    <article><Gauge size={19} /><span>압박 상황의 반응</span><p>{MODES[primaryResultMode].underPressure}</p></article>
-                    <article><UsersRound size={19} /><span>협업에 필요한 것</span><p>{MODES[primaryResultMode].collaboration}</p></article>
-                    <article><TrendingUp size={19} /><span>성장 포인트</span><p>{MODES[primaryResultMode].growth}</p></article>
-                  </div>
-                </>
-              )}
+              <div className="deep-insight-heading"><span>DEEP DIVE</span><h4>{primaryResultMode} · {MODES[primaryResultMode].name}을 더 깊이 이해하기</h4></div>
+              <div className="deep-insight-grid">
+                <article><Target size={19} /><span>동기를 높이는 조건</span><p>{MODES[primaryResultMode].motivation}</p></article>
+                <article><Gauge size={19} /><span>압박 상황의 반응</span><p>{MODES[primaryResultMode].underPressure}</p></article>
+                <article><UsersRound size={19} /><span>협업에 필요한 것</span><p>{MODES[primaryResultMode].collaboration}</p></article>
+                <article><TrendingUp size={19} /><span>성장 포인트</span><p>{MODES[primaryResultMode].growth}</p></article>
+              </div>
 
               <div className="deep-insight-heading action-heading"><span>ACTION</span><h4>결과를 행동으로 옮기기</h4></div>
               <div className="insight-grid">
-                {isTiedResult ? (
-                  <>
-                    <article><span>결과 읽는 법</span><p>{dominantModes.map((mode) => `${mode} ${scores[mode]}점`).join(" · ")}으로 같은 최고점입니다. 앞에 표시된 유형이 더 우세하다는 뜻은 아닙니다.</p></article>
-                    <article><span>상황별 활용</span><p>업무를 시작하기 전에 지금 필요한 행동이 {dominantModes.map((mode) => MODES[mode].name).join("인지, ")}인지 정하면 강점을 더 선명하게 사용할 수 있습니다.</p></article>
-                    <article><span>성장 포인트</span><p>{resultProfile.balance}</p></article>
-                  </>
-                ) : (
-                  <>
-                    <article><span>강점</span><p>{MODES[primaryResultMode].strength}</p></article>
-                    <article><span>주의할 점</span><p>{MODES[primaryResultMode].watch}</p></article>
-                    <article><span>소통 팁</span><p>{MODES[primaryResultMode].communication}</p></article>
-                  </>
-                )}
+                <article><span>강점</span><p>{MODES[primaryResultMode].strength}</p></article>
+                <article><span>주의할 점</span><p>{MODES[primaryResultMode].watch}</p></article>
+                <article><span>소통 팁</span><p>{MODES[primaryResultMode].communication}</p></article>
               </div>
-              <p className="blend-note">{isTiedResult ? "동점은 검사 실패가 아닙니다. 여러 행동유형을 비슷한 빈도로 사용했다는 뜻이며, 실제 상황과 역할에 따라 어느 유형이 더 자주 드러나는지 디브리핑에서 확인해 보세요." : "상황과 역할에 따라 네 유형의 행동을 모두 사용할 수 있으며, 이 결과는 현재 자주 선택하는 행동 경향을 보여줍니다."}</p>
+              <p className="blend-note">상황과 역할에 따라 네 유형의 행동을 모두 사용할 수 있으며, 이 결과는 현재 자주 선택하는 행동 경향을 보여줍니다.</p>
             </section>
 
             <div className="retake-area no-print">
@@ -955,7 +1057,7 @@ export function DiscAssessment({ initialView = "info" }: { initialView?: "info" 
                           );
                         })}
                         <article className="tie-distribution" style={{ "--mode-color": "#2f6f5e", "--mode-soft": "#edf5f1" } as React.CSSProperties}>
-                          <div><b>=</b><span>동점/균형</span></div><strong>{tiedResultCount}<small>명</small></strong>
+                          <div><b>=</b><span>기존 동점 기록</span></div><strong>{tiedResultCount}<small>명</small></strong>
                           <div className="mini-track"><span style={{ width: `${filteredRecords.length ? Math.round((tiedResultCount / filteredRecords.length) * 100) : 0}%` }} /></div>
                           <em>{filteredRecords.length ? Math.round((tiedResultCount / filteredRecords.length) * 100) : 0}%</em>
                         </article>

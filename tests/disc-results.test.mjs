@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { analyzeDiscScores } from "../app/disc-results.ts";
+import {
+  analyzeDiscScores,
+  countTieBreakVotes,
+  findSecondaryMode,
+  findTieBreakLeaders,
+} from "../app/disc-results.ts";
 
 test("keeps a single highest score as the primary type", () => {
   const result = analyzeDiscScores({ D: 9, I: 7, S: 5, C: 3 });
@@ -10,23 +15,30 @@ test("keeps a single highest score as the primary type", () => {
   assert.equal(result.secondaryMode, "I");
 });
 
-test("treats two equal highest scores as joint primary types", () => {
+test("identifies all raw-score leaders before tie resolution", () => {
   const result = analyzeDiscScores({ D: 8, I: 8, S: 5, C: 3 });
 
   assert.equal(result.kind, "dual");
   assert.deepEqual(result.dominantModes, ["D", "I"]);
-  assert.equal(result.secondaryMode, "S");
 });
 
-test("treats three or four equal highest scores as balanced profiles", () => {
-  const threeWay = analyzeDiscScores({ D: 7, I: 7, S: 7, C: 3 });
-  const fourWay = analyzeDiscScores({ D: 6, I: 6, S: 6, C: 6 });
+test("uses three situational choices to resolve a tied highest score", () => {
+  const candidates = ["D", "I"];
+  const votes = countTieBreakVotes(candidates, ["D", "I", "D"]);
 
-  assert.equal(threeWay.kind, "balanced");
-  assert.deepEqual(threeWay.dominantModes, ["D", "I", "S"]);
-  assert.equal(threeWay.secondaryMode, "C");
-  assert.equal(fourWay.kind, "balanced");
-  assert.deepEqual(fourWay.dominantModes, ["D", "I", "S", "C"]);
-  assert.equal(fourWay.secondaryMode, null);
-  assert.deepEqual(fourWay.coordinates, { pace: 50, focus: 50 });
+  assert.deepEqual(votes, { D: 2, I: 1, S: 0, C: 0 });
+  assert.deepEqual(findTieBreakLeaders(candidates, votes), ["D"]);
+});
+
+test("requests one final choice when situational choices remain tied", () => {
+  const candidates = ["D", "I", "S"];
+  const votes = countTieBreakVotes(candidates, ["D", "I", "S"]);
+
+  assert.deepEqual(findTieBreakLeaders(candidates, votes), candidates);
+});
+
+test("selects the next highest raw score as secondary after a tie is resolved", () => {
+  const analysis = analyzeDiscScores({ D: 8, I: 8, S: 5, C: 3 });
+
+  assert.equal(findSecondaryMode(analysis, "I"), "D");
 });

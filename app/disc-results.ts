@@ -15,6 +15,23 @@ export type DiscResultAnalysis = {
 export const DISC_MODE_ORDER: DiscKey[] = ["D", "I", "S", "C"];
 export const EMPTY_DISC_SCORES: DiscScores = { D: 0, I: 0, S: 0, C: 0 };
 
+export function countTieBreakVotes(candidates: DiscKey[], selections: DiscKey[]) {
+  return selections.reduce<DiscScores>(
+    (votes, mode) =>
+      candidates.includes(mode) ? { ...votes, [mode]: votes[mode] + 1 } : votes,
+    { ...EMPTY_DISC_SCORES },
+  );
+}
+
+export function findTieBreakLeaders(candidates: DiscKey[], votes: DiscScores) {
+  const highestVote = Math.max(...candidates.map((mode) => votes[mode]));
+  return candidates.filter((mode) => votes[mode] === highestVote);
+}
+
+export function findSecondaryMode(analysis: DiscResultAnalysis, primaryMode: DiscKey) {
+  return analysis.rankedModes.find((mode) => mode !== primaryMode) ?? null;
+}
+
 export function calculateDiscScores(answers: Record<number, DiscKey>) {
   return Object.values(answers).reduce<DiscScores>(
     (scores, mode) => ({ ...scores, [mode]: scores[mode] + 1 }),
