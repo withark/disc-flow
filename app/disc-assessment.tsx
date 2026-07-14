@@ -247,8 +247,8 @@ export function DiscAssessment({ initialView = "info" }: { initialView?: "info" 
   useEffect(() => {
     const timeout = window.setTimeout(() => {
       const params = new URLSearchParams(window.location.search);
-      const isGitHubPages = window.location.hostname.endsWith("github.io");
-      setExternalSheetMode(isGitHubPages);
+      const usesGoogleSheets = window.location.hostname.endsWith("github.io") || window.location.hostname.endsWith("chatgpt.site");
+      setExternalSheetMode(usesGoogleSheets);
       if (params.has("admin") || /\/admin\/?$/.test(window.location.pathname)) setView("admin");
     }, 0);
 
