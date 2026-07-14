@@ -40,10 +40,24 @@ test("spreads DISC types evenly across groups", () => {
   ]);
 });
 
+test("uses tied profiles flexibly when balancing groups", () => {
+  const rows = [record(1, "D/I"), record(2, "D/I"), record(3, "S"), record(4, "C")];
+  const groups = buildBalancedGroups(rows, 2, 5);
+
+  assert.deepEqual(groups.map((group) => group.members.length), [2, 2]);
+  for (const group of groups) {
+    for (const member of group.members) {
+      const assignedMode = group.memberModes[member.id];
+      assert.ok(member.dominant.split("/").includes(assignedMode));
+    }
+  }
+});
+
 test("creates debrief observations and questions", () => {
   const rows = [record(1, "D"), record(2, "D"), record(3, "I")];
   const debrief = createTeamDebrief(rows);
   assert.equal(debrief.topMode, "D");
+  assert.deepEqual(debrief.topModes, ["D"]);
   assert.ok(debrief.missingModes.includes("S"));
   assert.equal(debrief.questions.length, 4);
 });

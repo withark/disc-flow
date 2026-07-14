@@ -19,13 +19,21 @@ export type BalancedGroup = {
   number: number;
   members: TeamResultRecord[];
   distribution: Record<DiscKey, number>;
+  memberModes: Record<number, DiscKey>;
 };
 
 const MODE_ORDER: DiscKey[] = ["D", "I", "S", "C"];
 const EMPTY_DISTRIBUTION: Record<DiscKey, number> = { D: 0, I: 0, S: 0, C: 0 };
 
+export function dominantModes(record: TeamResultRecord) {
+  const modes = record.dominant
+    .split("/")
+    .filter((mode): mode is DiscKey => MODE_ORDER.includes(mode as DiscKey));
+  return modes.length ? [...new Set(modes)] : ["D" as DiscKey];
+}
+
 export function primaryMode(record: TeamResultRecord) {
-  return (record.dominant.split("/")[0] || "D") as DiscKey;
+  return dominantModes(record)[0];
 }
 
 export function latestUniqueRecords(records: TeamResultRecord[]) {
@@ -56,41 +64,43 @@ export function buildBalancedGroups(records: TeamResultRecord[], requestedCount:
     number: index + 1,
     members: [],
     distribution: { ...EMPTY_DISTRIBUTION },
+    memberModes: {},
   }));
+  const totalDistribution = { ...EMPTY_DISTRIBUTION };
+  const orderedRecords = [...records].sort((a, b) => {
+    const flexibility = dominantModes(a).length - dominantModes(b).length;
+    if (flexibility !== 0) return flexibility;
+    return seededHash(`${a.id}:${a.name}`, seed) - seededHash(`${b.id}:${b.name}`, seed);
+  });
 
-  for (const mode of MODE_ORDER) {
-    const bucket = records
-      .filter((record) => primaryMode(record) === mode)
-      .sort((a, b) => seededHash(`${a.id}:${a.name}`, seed) - seededHash(`${b.id}:${b.name}`, seed));
+  for (const member of orderedRecords) {
+    const options = dominantModes(member).flatMap((mode) => groups.map((group) => ({ group, mode })));
+    const selected = options.sort((a, b) => {
+      const sizeBalance = a.group.members.length - b.group.members.length;
+      if (sizeBalance !== 0) return sizeBalance;
+      const groupTypeBalance = a.group.distribution[a.mode] - b.group.distribution[b.mode];
+      if (groupTypeBalance !== 0) return groupTypeBalance;
+      const totalTypeBalance = totalDistribution[a.mode] - totalDistribution[b.mode];
+      if (totalTypeBalance !== 0) return totalTypeBalance;
+      return seededHash(`${a.group.number}:${a.mode}:${member.id}`, seed) - seededHash(`${b.group.number}:${b.mode}:${member.id}`, seed);
+    })[0];
 
-    for (const member of bucket) {
-      const selected = [...groups].sort((a, b) => {
-        const typeBalance = a.distribution[mode] - b.distribution[mode];
-        if (typeBalance !== 0) return typeBalance;
-        const sizeBalance = a.members.length - b.members.length;
-        if (sizeBalance !== 0) return sizeBalance;
-        return seededHash(`${a.number}:${member.id}`, seed) - seededHash(`${b.number}:${member.id}`, seed);
-      })[0];
-
-      selected.members.push(member);
-      selected.distribution[mode] += 1;
-    }
+    selected.group.members.push(member);
+    selected.group.distribution[selected.mode] += 1;
+    selected.group.memberModes[member.id] = selected.mode;
+    totalDistribution[selected.mode] += 1;
   }
 
   return groups;
 }
 
 export function createTeamDebrief(records: TeamResultRecord[]) {
-  const distribution = records.reduce<Record<DiscKey, number>>(
-    (counts, record) => {
-      counts[primaryMode(record)] += 1;
-      return counts;
-    },
-    { ...EMPTY_DISTRIBUTION },
-  );
+  const distribution = buildBalancedGroups(records, 1, 0)[0]?.distribution ?? { ...EMPTY_DISTRIBUTION };
   const sortedModes = [...MODE_ORDER].sort((a, b) => distribution[b] - distribution[a]);
   const topMode = sortedModes[0];
+  const topModes = sortedModes.filter((mode) => distribution[mode] === distribution[topMode]);
   const missingModes = MODE_ORDER.filter((mode) => distribution[mode] === 0);
+  const tiedCount = records.filter((record) => dominantModes(record).length > 1).length;
   const averagePace = records.length ? Math.round(records.reduce((sum, record) => sum + record.pace, 0) / records.length) : 0;
   const averageFocus = records.length ? Math.round(records.reduce((sum, record) => sum + record.focus, 0) / records.length) : 0;
 
@@ -110,7 +120,9 @@ export function createTeamDebrief(records: TeamResultRecord[]) {
 
   const observations = records.length
     ? [
-        `${topMode} 유형이 ${distribution[topMode]}명으로 가장 많아 ${modeObservation[topMode]}`,
+        topModes.length > 1
+          ? `${topModes.join("·")} 유형이 각각 ${distribution[topMode]}명으로 공동 분포를 이루고 있습니다.`
+          : `${topMode} 유형이 ${distribution[topMode]}명으로 가장 많아 ${modeObservation[topMode]}`,
         averagePace >= 50
           ? `팀의 빠른 속도 지향이 ${averagePace}%로, 논의보다 실행이 먼저 시작될 가능성이 있습니다.`
           : `팀의 차분한 속도 지향이 ${100 - averagePace}%로, 변화 전 충분한 합의와 준비를 선호합니다.`,
@@ -120,6 +132,7 @@ export function createTeamDebrief(records: TeamResultRecord[]) {
         missingModes.length
           ? `${missingModes.join("·")} 관점이 대표유형에 없습니다. 중요한 결정에서 해당 관점을 의도적으로 맡길 필요가 있습니다.`
           : "네 가지 대표유형이 모두 있어 서로 다른 관점을 활용할 기반이 갖춰져 있습니다.",
+        ...(tiedCount ? [`공동 주 유형 또는 균형 프로필이 ${tiedCount}명입니다. 팀 분포와 조 편성에서는 동점 유형 중 부족한 관점에 유연하게 배치했습니다.`] : []),
       ]
     : ["선택한 범위에 진단 결과가 없습니다."];
 
@@ -132,5 +145,5 @@ export function createTeamDebrief(records: TeamResultRecord[]) {
       ]
     : [];
 
-  return { distribution, topMode, missingModes, averagePace, averageFocus, observations, questions };
+  return { distribution, topMode, topModes, missingModes, tiedCount, averagePace, averageFocus, observations, questions };
 }

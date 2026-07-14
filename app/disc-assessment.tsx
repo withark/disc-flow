@@ -28,16 +28,21 @@ import {
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { QUESTIONS, type DiscKey } from "./disc-questions";
 import {
+  analyzeDiscAnswers,
+  analyzeDiscScores,
+  calculateDiscScores,
+  DISC_MODE_ORDER,
+  EMPTY_DISC_SCORES,
+} from "./disc-results";
+import {
   buildBalancedGroups,
   createTeamDebrief,
   latestUniqueRecords,
-  primaryMode,
   type TeamResultRecord,
 } from "./team-tools";
 
 type View = "info" | "quiz" | "result" | "admin";
 type AdminTab = "overview" | "groups" | "debrief";
-type Scores = Record<DiscKey, number>;
 
 type ResultRecord = TeamResultRecord;
 
@@ -89,7 +94,7 @@ function loadSheetResults(sheetApi: string, adminPassword: string) {
   });
 }
 
-const MODE_ORDER: DiscKey[] = ["D", "I", "S", "C"];
+const MODE_ORDER = DISC_MODE_ORDER;
 
 const MODES: Record<
   DiscKey,
@@ -166,7 +171,9 @@ const MODES: Record<
   },
 };
 
-const BLENDS: Record<string, { title: string; summary: string; contribution: string; balance: string }> = {
+type BehaviorProfile = { title: string; summary: string; contribution: string; balance: string };
+
+const BLENDS: Record<string, BehaviorProfile> = {
   DI: { title: "빠른 설득형", summary: "결정을 내리는 속도와 사람을 움직이는 표현력이 함께 나타납니다.", contribution: "새로운 과제를 빠르게 시작하고 주변의 참여를 끌어냅니다.", balance: "낙관적인 확신만으로 세부 실행과 반대 의견을 건너뛰지 않도록 확인이 필요합니다." },
   DS: { title: "단단한 실행형", summary: "목표를 밀어붙이는 힘과 사람을 안정적으로 챙기는 태도가 결합됩니다.", contribution: "성과를 향해 나아가면서도 팀이 따라올 수 있는 흐름을 만듭니다.", balance: "참다가 한 번에 단호해지기보다 기대와 불편을 초기에 공유하는 것이 좋습니다." },
   DC: { title: "성과 기준형", summary: "빠른 결과 지향성과 높은 정확성 기준을 동시에 추구합니다.", contribution: "복잡한 문제의 핵심을 잡고 품질 높은 결론으로 연결합니다.", balance: "속도와 완성도를 모두 높이려다 자신과 타인에게 과도한 기준을 요구할 수 있습니다." },
@@ -181,32 +188,42 @@ const BLENDS: Record<string, { title: string; summary: string; contribution: str
   CS: { title: "정교한 지원형", summary: "높은 정확성과 꾸준한 책임감으로 팀을 안정적으로 뒷받침합니다.", contribution: "중요한 세부를 놓치지 않고 약속된 품질을 지속적으로 유지합니다.", balance: "혼자 충분히 검토하고 감당하기보다 우선순위와 지원 필요를 일찍 공유해야 합니다." },
 };
 
-const EMPTY_SCORES: Scores = { D: 0, I: 0, S: 0, C: 0 };
+const TIED_PAIR_PROFILES: Record<string, BehaviorProfile> = {
+  DI: { title: "추진·영향 공동형", summary: "결과를 빠르게 만들려는 행동과 사람의 참여를 끌어내는 행동이 같은 강도로 나타납니다.", contribution: "방향을 제시하면서 주변의 공감과 실행 에너지를 함께 높입니다.", balance: "속도와 낙관성이 함께 커질 때 세부 조건과 반대 의견을 의도적으로 확인해야 합니다." },
+  DS: { title: "결단·안정 공동형", summary: "필요할 때 단호하게 결정하면서도 관계와 실행 안정성을 같은 비중으로 살핍니다.", contribution: "성과를 향해 움직이면서 구성원이 따라올 수 있는 안정적인 흐름을 만듭니다.", balance: "배려하며 참다가 갑자기 결론을 밀어붙이지 않도록 기대와 우려를 초기에 공유해야 합니다." },
+  DC: { title: "성과·품질 공동형", summary: "결과를 내는 속도와 기준을 지키는 정확성이 같은 강도로 나타납니다.", contribution: "핵심 문제를 빠르게 구조화하고 높은 완성도의 해결책으로 연결합니다.", balance: "속도와 완성도를 모두 높이려다 자신과 타인에게 과도한 기준을 요구하지 않도록 조절해야 합니다." },
+  IS: { title: "관계·지원 공동형", summary: "활발하게 사람을 연결하는 행동과 차분하게 지원하는 행동이 함께 나타납니다.", contribution: "구성원이 편하게 참여하고 서로 신뢰할 수 있는 협업 분위기를 만듭니다.", balance: "관계를 지키려다 필요한 결정이나 불편한 대화를 미루지 않도록 기준과 기한을 확인해야 합니다." },
+  IC: { title: "소통·분석 공동형", summary: "아이디어를 넓히는 표현력과 근거를 점검하는 분석력이 같은 강도로 나타납니다.", contribution: "복잡한 정보를 이해하기 쉬운 제안으로 바꾸고 사람들의 납득을 이끌어냅니다.", balance: "설명과 검토를 다듬는 데 머물지 않도록 실행에 필요한 최소 조건과 시점을 정해야 합니다." },
+  SC: { title: "안정·품질 공동형", summary: "꾸준한 지원 행동과 정확한 기준 관리가 같은 강도로 나타납니다.", contribution: "절차를 안정적으로 운영하고 세부 오류를 줄여 팀의 신뢰를 높입니다.", balance: "익숙하고 검증된 방식을 선호해 변화 대응이 늦어지지 않도록 작은 실험의 범위를 정해보는 것이 좋습니다." },
+};
 
-function calculateScores(answers: Record<number, DiscKey>) {
-  return Object.values(answers).reduce<Scores>(
-    (scores, mode) => ({ ...scores, [mode]: scores[mode] + 1 }),
-    { ...EMPTY_SCORES },
-  );
-}
+function balancedProfile(modeCount: number): BehaviorProfile {
+  if (modeCount === 4) {
+    return {
+      title: "전반적 균형 프로필",
+      summary: "D·I·S·C가 같은 최고점으로, 특정 한 유형보다 상황에 따라 여러 행동을 고르게 사용하는 경향이 나타납니다.",
+      contribution: "과업, 관계, 속도, 품질 관점을 폭넓게 전환하며 다양한 역할에 적응할 수 있습니다.",
+      balance: "상황 적응성이 높은 만큼 나의 기본 우선순위가 모호해질 수 있어, 중요한 순간에는 판단 기준을 먼저 정하는 것이 좋습니다.",
+    };
+  }
 
-function rankModes(scores: Scores) {
-  return [...MODE_ORDER].sort((a, b) => scores[b] - scores[a]);
-}
-
-function calculateCoordinates(scores: Scores) {
-  const total = Math.max(1, Object.values(scores).reduce((sum, value) => sum + value, 0));
   return {
-    pace: Math.round(((scores.D + scores.I) / total) * 100),
-    focus: Math.round(((scores.I + scores.S) / total) * 100),
+    title: "다중 강점 균형형",
+    summary: "세 가지 행동유형이 같은 최고점으로 나타나 한 가지 방식보다 상황에 따라 여러 강점을 함께 사용합니다.",
+    contribution: "서로 다른 관점을 연결하고 역할 요구에 맞춰 행동 방식을 유연하게 바꿀 수 있습니다.",
+    balance: "여러 관점을 동시에 만족시키려다 결정 기준이 흐려지지 않도록 현재 가장 중요한 목표를 먼저 정해야 합니다.",
   };
 }
 
 function modeLabel(key: string) {
-  return key
-    .split("/")
+  const modes = key.split("/").filter(Boolean);
+  if (!modes.length) return "-";
+  const label = modes
     .map((mode) => MODES[mode as DiscKey]?.name ?? mode)
     .join(" · ");
+  if (modes.length === 2) return `${label} 공동`;
+  if (modes.length > 2) return `${label} 균형`;
+  return label;
 }
 
 function formatDate(value: string) {
@@ -243,14 +260,21 @@ export function DiscAssessment({ initialView = "info" }: { initialView?: "info" 
   const [externalSheetMode, setExternalSheetMode] = useState(false);
   const sheetApi = DEFAULT_SHEET_API;
 
-  const scores = useMemo(() => calculateScores(answers), [answers]);
-  const rankedModes = useMemo(() => rankModes(scores), [scores]);
-  const coordinates = useMemo(() => calculateCoordinates(scores), [scores]);
-  const maxScore = Math.max(...Object.values(scores));
-  const dominantModes = rankedModes.filter((mode) => scores[mode] === maxScore);
-  const primaryResultMode = rankedModes[0];
-  const secondaryMode = rankedModes[1];
-  const blendProfile = BLENDS[`${primaryResultMode}${secondaryMode}`];
+  const scores = useMemo(() => calculateDiscScores(answers), [answers]);
+  const resultAnalysis = useMemo(() => analyzeDiscScores(scores), [scores]);
+  const coordinates = resultAnalysis.coordinates;
+  const dominantModes = resultAnalysis.dominantModes;
+  const primaryResultMode = resultAnalysis.primaryMode;
+  const secondaryMode = resultAnalysis.secondaryMode ?? resultAnalysis.rankedModes[1];
+  const isTiedResult = resultAnalysis.kind !== "single";
+  const dominantCode = dominantModes.join("");
+  const resultProfile = isTiedResult
+    ? dominantModes.length === 2
+      ? TIED_PAIR_PROFILES[dominantCode]
+      : balancedProfile(dominantModes.length)
+    : BLENDS[`${primaryResultMode}${secondaryMode}`];
+  const resultColor = isTiedResult ? "#2f6f5e" : MODES[primaryResultMode].color;
+  const resultSoft = isTiedResult ? "#edf5f1" : MODES[primaryResultMode].soft;
 
   useEffect(() => {
     const timeout = window.setTimeout(() => {
@@ -304,26 +328,22 @@ export function DiscAssessment({ initialView = "info" }: { initialView?: "info" 
       advancingRef.current = false;
       return;
     }
-    const finalScores = calculateScores(finalAnswers);
-    const finalRankedModes = rankModes(finalScores);
-    const finalMaxScore = Math.max(...Object.values(finalScores));
-    const finalDominantModes = finalRankedModes.filter((mode) => finalScores[mode] === finalMaxScore);
-    const finalSecondaryMode = finalRankedModes[1];
-    const finalCoordinates = calculateCoordinates(finalScores);
+    const finalAnalysis = analyzeDiscAnswers(finalAnswers);
+    const finalScores = finalAnalysis.scores;
 
     setIsAdvancing(false);
     advancingRef.current = false;
     setView("result");
     setSaveState("saving");
 
-    const dominant = finalDominantModes.join("/");
+    const dominant = finalAnalysis.dominantModes.join("/");
     const resultPayload = {
       name: participant.name.trim(),
       team: participant.team.trim(),
       scores: finalScores,
       dominant,
-      secondary: finalSecondaryMode,
-      ...finalCoordinates,
+      secondary: finalAnalysis.secondaryMode ?? "",
+      ...finalAnalysis.coordinates,
     };
     try {
       if (externalSheetMode) {
@@ -423,10 +443,14 @@ export function DiscAssessment({ initialView = "info" }: { initialView?: "info" 
       MODE_ORDER.reduce<Record<DiscKey, number>>(
         (acc, mode) => ({
           ...acc,
-          [mode]: filteredRecords.filter((record) => record.dominant.split("/")[0] === mode).length,
+          [mode]: filteredRecords.filter((record) => record.dominant === mode).length,
         }),
-        { ...EMPTY_SCORES },
+        { ...EMPTY_DISC_SCORES },
       ),
+    [filteredRecords],
+  );
+  const tiedResultCount = useMemo(
+    () => filteredRecords.filter((record) => record.dominant.split("/").filter(Boolean).length > 1).length,
     [filteredRecords],
   );
 
@@ -629,15 +653,18 @@ export function DiscAssessment({ initialView = "info" }: { initialView?: "info" 
               <button className="back-button" onClick={goHome}><ArrowLeft size={17} /> 처음으로</button>
               <button className="secondary-button" onClick={() => window.print()}><Printer size={17} /> 인쇄·PDF</button>
             </div>
-            <div className="result-hero" style={{ "--result-color": MODES[primaryResultMode].color, "--result-soft": MODES[primaryResultMode].soft } as React.CSSProperties}>
+            <div className="result-hero" style={{ "--result-color": resultColor, "--result-soft": resultSoft } as React.CSSProperties}>
               <div>
                 <span className="result-owner">{participant.name}님의 DISC 결과</span>
                 <div className="result-type-line">
-                  <span className="result-letter">{dominantModes.join("")}</span>
-                  <div><p>대표 행동유형</p><h1>{dominantModes.map((mode) => MODES[mode].name).join(" · ")}</h1></div>
+                  <span className={`result-letter result-letter-${dominantModes.length}`}>{dominantCode}</span>
+                  <div>
+                    <p>{resultAnalysis.kind === "single" ? "대표 행동유형" : resultAnalysis.kind === "dual" ? "공동 주 행동유형" : "균형 행동유형"}</p>
+                    <h1>{dominantModes.map((mode) => MODES[mode].name).join(" · ")}</h1>
+                  </div>
                 </div>
-                <h2>{MODES[primaryResultMode].title}</h2>
-                <p>{MODES[primaryResultMode].summary}</p>
+                <h2>{isTiedResult ? resultProfile.title : MODES[primaryResultMode].title}</h2>
+                <p>{isTiedResult ? resultProfile.summary : MODES[primaryResultMode].summary}</p>
               </div>
               <div className={`save-chip ${saveState}`}>
                 {saveState === "saving" && "결과 저장 중"}
@@ -649,7 +676,7 @@ export function DiscAssessment({ initialView = "info" }: { initialView?: "info" 
             <section className="result-overview">
               <div className="section-heading">
                 <div><span>DISC OVERVIEW</span><h3>전체 지도에서 본 나의 결과</h3></div>
-                <p>강조된 영역이 나의 대표 행동유형입니다.</p>
+                <p>{isTiedResult ? "같은 최고점을 받은 영역을 함께 강조했습니다." : "강조된 영역이 나의 대표 행동유형입니다."}</p>
               </div>
               <div className="result-overview-layout">
                 <div className="disc-map" aria-label="DISC 전체 지도와 나의 대표 행동유형">
@@ -665,7 +692,7 @@ export function DiscAssessment({ initialView = "info" }: { initialView?: "info" 
                       >
                         <strong>{mode}</strong>
                         <span>{MODES[mode].name}</span>
-                        {isDominant && <small>나의 유형</small>}
+                        {isDominant && <small>{resultAnalysis.kind === "single" ? "나의 유형" : resultAnalysis.kind === "dual" ? "공동 주 유형" : "균형 유형"}</small>}
                       </div>
                     );
                   })}
@@ -688,7 +715,7 @@ export function DiscAssessment({ initialView = "info" }: { initialView?: "info" 
                         <div>
                           <strong>{MODES[mode].name}</strong>
                           <p>{MODES[mode].title}</p>
-                          {isDominant && <small>나의 대표 유형</small>}
+                          {isDominant && <small>{resultAnalysis.kind === "single" ? "나의 대표 유형" : resultAnalysis.kind === "dual" ? "공동 주 유형" : "균형 유형"}</small>}
                         </div>
                       </article>
                     );
@@ -717,41 +744,72 @@ export function DiscAssessment({ initialView = "info" }: { initialView?: "info" 
                 <div className="coordinate-map">
                   <span className="quadrant q-d">D</span><span className="quadrant q-i">I</span>
                   <span className="quadrant q-c">C</span><span className="quadrant q-s">S</span>
-                  <i className="result-dot" style={{ left: `${coordinates.focus}%`, top: `${100 - coordinates.pace}%`, background: MODES[primaryResultMode].color }} />
+                  <i className="result-dot" style={{ left: `${coordinates.focus}%`, top: `${100 - coordinates.pace}%`, background: resultColor }} />
                 </div>
                 <div className="coordinate-legend"><span>과업 중심</span><span>사람 중심</span></div>
               </section>
             </div>
 
             <section className="insight-band">
-              <div className="section-heading"><div><span>INSIGHT</span><h3>{primaryResultMode}{secondaryMode} · {blendProfile.title}</h3></div><p>주 유형과 보조 유형을 함께 해석했습니다.</p></div>
-              <div className="blend-profile" style={{ "--mode-color": MODES[primaryResultMode].color, "--mode-soft": MODES[primaryResultMode].soft } as React.CSSProperties}>
+              <div className="section-heading">
+                <div><span>INSIGHT</span><h3>{isTiedResult ? dominantCode : `${primaryResultMode}${secondaryMode}`} · {resultProfile.title}</h3></div>
+                <p>{isTiedResult ? "같은 최고점 유형을 우선순위 없이 함께 해석했습니다." : "주 유형과 보조 유형을 함께 해석했습니다."}</p>
+              </div>
+              <div className="blend-profile" style={{ "--mode-color": resultColor, "--mode-soft": resultSoft } as React.CSSProperties}>
                 <div className="blend-profile-main">
-                  <span>{primaryResultMode} 주 유형 + {secondaryMode} 보조 유형</span>
-                  <h4>{blendProfile.title}</h4>
-                  <p>{blendProfile.summary}</p>
+                  <span>{isTiedResult ? `${dominantModes.join(" + ")} ${resultAnalysis.kind === "dual" ? "공동 주 유형" : "균형 프로필"}` : `${primaryResultMode} 주 유형 + ${secondaryMode} 보조 유형`}</span>
+                  <h4>{resultProfile.title}</h4>
+                  <p>{resultProfile.summary}</p>
                 </div>
                 <div className="blend-profile-details">
-                  <article><span>팀에 주는 기여</span><p>{blendProfile.contribution}</p></article>
-                  <article><span>균형 포인트</span><p>{blendProfile.balance}</p></article>
+                  <article><span>팀에 주는 기여</span><p>{resultProfile.contribution}</p></article>
+                  <article><span>균형 포인트</span><p>{resultProfile.balance}</p></article>
                 </div>
               </div>
 
-              <div className="deep-insight-heading"><span>DEEP DIVE</span><h4>{primaryResultMode} · {MODES[primaryResultMode].name}을 더 깊이 이해하기</h4></div>
-              <div className="deep-insight-grid">
-                <article><Target size={19} /><span>동기를 높이는 조건</span><p>{MODES[primaryResultMode].motivation}</p></article>
-                <article><Gauge size={19} /><span>압박 상황의 반응</span><p>{MODES[primaryResultMode].underPressure}</p></article>
-                <article><UsersRound size={19} /><span>협업에 필요한 것</span><p>{MODES[primaryResultMode].collaboration}</p></article>
-                <article><TrendingUp size={19} /><span>성장 포인트</span><p>{MODES[primaryResultMode].growth}</p></article>
-              </div>
+              {isTiedResult ? (
+                <>
+                  <div className="deep-insight-heading"><span>DEEP DIVE</span><h4>공동 최고점 유형별 이해</h4></div>
+                  <div className={`tie-mode-grid tie-count-${dominantModes.length}`}>
+                    {dominantModes.map((mode) => (
+                      <article key={mode} style={{ "--mode-color": MODES[mode].color, "--mode-soft": MODES[mode].soft } as React.CSSProperties}>
+                        <header><b>{mode}</b><div><strong>{MODES[mode].name}</strong><span>{MODES[mode].title}</span></div></header>
+                        <div><span>주요 강점</span><p>{MODES[mode].strength}</p></div>
+                        <div><span>압박 상황의 반응</span><p>{MODES[mode].underPressure}</p></div>
+                        <div><span>협업에 필요한 것</span><p>{MODES[mode].collaboration}</p></div>
+                      </article>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="deep-insight-heading"><span>DEEP DIVE</span><h4>{primaryResultMode} · {MODES[primaryResultMode].name}을 더 깊이 이해하기</h4></div>
+                  <div className="deep-insight-grid">
+                    <article><Target size={19} /><span>동기를 높이는 조건</span><p>{MODES[primaryResultMode].motivation}</p></article>
+                    <article><Gauge size={19} /><span>압박 상황의 반응</span><p>{MODES[primaryResultMode].underPressure}</p></article>
+                    <article><UsersRound size={19} /><span>협업에 필요한 것</span><p>{MODES[primaryResultMode].collaboration}</p></article>
+                    <article><TrendingUp size={19} /><span>성장 포인트</span><p>{MODES[primaryResultMode].growth}</p></article>
+                  </div>
+                </>
+              )}
 
               <div className="deep-insight-heading action-heading"><span>ACTION</span><h4>결과를 행동으로 옮기기</h4></div>
               <div className="insight-grid">
-                <article><span>강점</span><p>{MODES[primaryResultMode].strength}</p></article>
-                <article><span>주의할 점</span><p>{MODES[primaryResultMode].watch}</p></article>
-                <article><span>소통 팁</span><p>{MODES[primaryResultMode].communication}</p></article>
+                {isTiedResult ? (
+                  <>
+                    <article><span>결과 읽는 법</span><p>{dominantModes.map((mode) => `${mode} ${scores[mode]}점`).join(" · ")}으로 같은 최고점입니다. 앞에 표시된 유형이 더 우세하다는 뜻은 아닙니다.</p></article>
+                    <article><span>상황별 활용</span><p>업무를 시작하기 전에 지금 필요한 행동이 {dominantModes.map((mode) => MODES[mode].name).join("인지, ")}인지 정하면 강점을 더 선명하게 사용할 수 있습니다.</p></article>
+                    <article><span>성장 포인트</span><p>{resultProfile.balance}</p></article>
+                  </>
+                ) : (
+                  <>
+                    <article><span>강점</span><p>{MODES[primaryResultMode].strength}</p></article>
+                    <article><span>주의할 점</span><p>{MODES[primaryResultMode].watch}</p></article>
+                    <article><span>소통 팁</span><p>{MODES[primaryResultMode].communication}</p></article>
+                  </>
+                )}
               </div>
-              <p className="blend-note">상황과 역할에 따라 네 유형의 행동을 모두 사용할 수 있으며, 이 결과는 현재 자주 선택하는 행동 경향을 보여줍니다.</p>
+              <p className="blend-note">{isTiedResult ? "동점은 검사 실패가 아닙니다. 여러 행동유형을 비슷한 빈도로 사용했다는 뜻이며, 실제 상황과 역할에 따라 어느 유형이 더 자주 드러나는지 디브리핑에서 확인해 보세요." : "상황과 역할에 따라 네 유형의 행동을 모두 사용할 수 있으며, 이 결과는 현재 자주 선택하는 행동 경향을 보여줍니다."}</p>
             </section>
 
             <div className="retake-area no-print">
@@ -851,6 +909,11 @@ export function DiscAssessment({ initialView = "info" }: { initialView?: "info" 
                             </article>
                           );
                         })}
+                        <article className="tie-distribution" style={{ "--mode-color": "#2f6f5e", "--mode-soft": "#edf5f1" } as React.CSSProperties}>
+                          <div><b>=</b><span>동점/균형</span></div><strong>{tiedResultCount}<small>명</small></strong>
+                          <div className="mini-track"><span style={{ width: `${filteredRecords.length ? Math.round((tiedResultCount / filteredRecords.length) * 100) : 0}%` }} /></div>
+                          <em>{filteredRecords.length ? Math.round((tiedResultCount / filteredRecords.length) * 100) : 0}%</em>
+                        </article>
                       </div>
                     </div>
 
@@ -865,9 +928,13 @@ export function DiscAssessment({ initialView = "info" }: { initialView?: "info" 
                         <table>
                           <thead><tr><th>이름</th><th>팀</th><th>대표유형</th><th>D</th><th>I</th><th>S</th><th>C</th><th>응답일</th></tr></thead>
                           <tbody>
-                            {filteredRecords.map((record) => (
-                              <tr key={record.id}><td><strong>{record.name}</strong></td><td>{record.team || "-"}</td><td><span className="type-pill" style={{ color: MODES[record.dominant.split("/")[0] as DiscKey]?.color }}>{modeLabel(record.dominant)}</span></td><td>{record.d}</td><td>{record.i}</td><td>{record.s}</td><td>{record.c}</td><td>{formatDate(record.createdAt)}</td></tr>
-                            ))}
+                            {filteredRecords.map((record) => {
+                              const recordModes = record.dominant.split("/").filter(Boolean);
+                              const typeColor = recordModes.length > 1 ? "#2f6f5e" : MODES[recordModes[0] as DiscKey]?.color;
+                              return (
+                                <tr key={record.id}><td><strong>{record.name}</strong></td><td>{record.team || "-"}</td><td><span className="type-pill" style={{ color: typeColor }}>{modeLabel(record.dominant)}</span></td><td>{record.d}</td><td>{record.i}</td><td>{record.s}</td><td>{record.c}</td><td>{formatDate(record.createdAt)}</td></tr>
+                              );
+                            })}
                             {!filteredRecords.length && <tr><td colSpan={8} className="empty-row">조건에 맞는 응답이 없습니다.</td></tr>}
                           </tbody>
                         </table>
@@ -905,11 +972,13 @@ export function DiscAssessment({ initialView = "info" }: { initialView?: "info" 
                             </div>
                             <ul>
                               {group.members.map((record) => {
-                                const mode = primaryMode(record);
+                                const mode = group.memberModes[record.id] ?? "D";
+                                const tied = record.dominant.includes("/");
+                                const badge = tied ? record.dominant.replaceAll("/", "") : mode;
                                 return (
                                   <li key={record.id}>
-                                    <span className="member-mode" style={{ color: MODES[mode].color, background: MODES[mode].soft }}>{mode}</span>
-                                    <div><strong>{record.name}</strong><small>{record.team || "소속 없음"} · {MODES[mode].name}</small></div>
+                                    <span className={`member-mode ${tied ? "is-tied" : ""}`} style={{ color: tied ? "#2f6f5e" : MODES[mode].color, background: tied ? "#edf5f1" : MODES[mode].soft }}>{badge}</span>
+                                    <div><strong>{record.name}</strong><small>{record.team || "소속 없음"} · {modeLabel(record.dominant)}</small></div>
                                   </li>
                                 );
                               })}
@@ -932,7 +1001,7 @@ export function DiscAssessment({ initialView = "info" }: { initialView?: "info" 
                     ) : (
                       <>
                         <div className="debrief-summary" style={{ "--mode-color": MODES[teamDebrief.topMode].color, "--mode-soft": MODES[teamDebrief.topMode].soft } as React.CSSProperties}>
-                          <div><span>가장 많은 대표유형</span><strong>{teamDebrief.topMode} · {MODES[teamDebrief.topMode].name}</strong></div>
+                          <div><span>{teamDebrief.topModes.length > 1 ? "공동 대표유형" : "가장 많은 대표유형"}</span><strong>{teamDebrief.topModes.map((mode) => `${mode} · ${MODES[mode].name}`).join(" / ")}</strong></div>
                           <div><span>팀 속도</span><strong>{teamDebrief.averagePace}% 빠른 실행</strong></div>
                           <div><span>팀 초점</span><strong>{teamDebrief.averageFocus}% 사람 중심</strong></div>
                         </div>

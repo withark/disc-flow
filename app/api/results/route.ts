@@ -57,7 +57,13 @@ export async function POST(request: Request) {
     if (scoreValues.some((score) => !Number.isInteger(score) || (score ?? -1) < 0 || (score ?? 13) > 12) || scoreValues.reduce((sum, score) => sum + (score ?? 0), 0) !== 24) {
       return Response.json({ error: "점수 정보가 올바르지 않습니다." }, { status: 400 });
     }
-    if (!payload.dominant || !validModeList(payload.dominant) || !payload.secondary || !MODES.includes(payload.secondary as DiscMode)) {
+    const rankedModes = [...MODES].sort((a, b) => (scores?.[b] ?? 0) - (scores?.[a] ?? 0));
+    const maxScore = scores?.[rankedModes[0]] ?? 0;
+    const expectedDominantModes = rankedModes.filter((mode) => scores?.[mode] === maxScore);
+    const expectedDominant = expectedDominantModes.join("/");
+    const expectedSecondary = rankedModes.find((mode) => !expectedDominantModes.includes(mode)) ?? "";
+    const secondary = payload.secondary?.trim() ?? "";
+    if (!payload.dominant || !validModeList(payload.dominant) || payload.dominant !== expectedDominant || secondary !== expectedSecondary) {
       return Response.json({ error: "유형 정보가 올바르지 않습니다." }, { status: 400 });
     }
     if (!Number.isInteger(payload.pace) || !Number.isInteger(payload.focus) || (payload.pace ?? -1) < 0 || (payload.pace ?? 101) > 100 || (payload.focus ?? -1) < 0 || (payload.focus ?? 101) > 100) {
@@ -73,7 +79,7 @@ export async function POST(request: Request) {
       s: scores?.S ?? 0,
       c: scores?.C ?? 0,
       dominant: payload.dominant,
-      secondary: payload.secondary,
+      secondary,
       pace: payload.pace ?? 0,
       focus: payload.focus ?? 0,
     }).returning();
